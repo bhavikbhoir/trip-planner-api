@@ -1,0 +1,223 @@
+service: trip-planner-api
+useDotenv: true
+
+provider:
+  name: aws
+  runtime: nodejs20.x
+  region: us-east-1
+  stage: ${opt:stage, 'dev'}
+  environment:
+    TABLE_NAME: trip-planner-${self:provider.stage}
+    COGNITO_USER_POOL_ID: !Ref TripPlannerUserPool
+    COGNITO_CLIENT_ID: !Ref TripPlannerUserPoolClient
+    WEATHER_SECRET_NAME: trip-planner/weather-api-key
+  iam:
+    role:
+      statements:
+        - Effect: Allow
+          Action:
+            - dynamodb:GetItem
+            - dynamodb:PutItem
+            - dynamodb:UpdateItem
+            - dynamodb:DeleteItem
+            - dynamodb:Query
+            - dynamodb:BatchGetItem
+            - dynamodb:TransactWriteItems
+          Resource:
+            - !GetAtt TripPlannerTable.Arn
+            - !Sub '${TripPlannerTable.Arn}/index/*'
+        - Effect: Allow
+          Action:
+            - bedrock:InvokeModel
+          Resource:
+            - "arn:aws:bedrock:*::foundation-model/*"
+            - "arn:aws:bedrock:*:*:inference-profile/*"
+        - Effect: Allow
+          Action:
+            - secretsmanager:GetSecretValue
+          Resource:
+            - !Sub 'arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:trip-planner/weather-api-key-*'
+  httpApi:
+    cors:
+      allowedOrigins:
+        - http://localhost:5173
+        # TODO(prod): add the deployed Firebase Hosting origin, e.g. https://trip-planner.web.app
+      allowedHeaders:
+        - Content-Type
+        - Authorization
+      allowedMethods:
+        - GET
+        - POST
+        - PUT
+        - PATCH
+        - DELETE
+        - OPTIONS
+    authorizers:
+      cognitoJwt:
+        type: jwt
+        identitySource: $request.header.Authorization
+        issuerUrl: !Sub 'https://cognito-idp.${AWS::Region}.amazonaws.com/${TripPlannerUserPool}'
+        audience:
+          - !Ref TripPlannerUserPoolClient
+
+functions:
+  createTrip:
+    handler: functions/trips/create.handler
+    events:
+      - httpApi:
+          path: /trips
+          method: post
+          authorizer:
+            name: cognitoJwt
+
+  listTrips:
+    handler: functions/trips/list.handler
+    events:
+      - httpApi:
+          path: /trips
+          method: get
+          authorizer:
+            name: cognitoJwt
+
+  getTrip:
+    handler: functions/trips/get.handler
+    events:
+      - httpApi:
+          path: /trips/{tripId}
+          method: get
+          authorizer:
+            name: cognitoJwt
+
+  joinTrip:
+    handler: functions/trips/join.handler
+    events:
+      - httpApi:
+          path: /trips/{tripId}/join
+          method: post
+          authorizer:
+            name: cognitoJwt
+
+  updateMyMembership:
+    handler: functions/members/updateMe.handler
+    events:
+      - httpApi:
+          path: /trips/{tripId}/members/me
+          method: patch
+          authorizer:
+            name: cognitoJwt
+
+  upsertMyLogistics:
+    handler: functions/logistics/upsert.handler
+    events:
+      - httpApi:
+          path: /trips/{tripId}/logistics/me
+          method: put
+          authorizer:
+            name: cognitoJwt
+
+  createBooking:
+    handler: functions/bookings/create.handler
+    events:
+      - httpApi:
+          path: /trips/{tripId}/bookings
+          method: post
+          authorizer:
+            name: cognitoJwt
+
+  removeBooking:
+    handler: functions/bookings/remove.handler
+    events:
+      - httpApi:
+          path: /trips/{tripId}/bookings/{bookingId}
+          method: delete
+          authorizer:
+            name: cognitoJwt
+
+  getWeather:
+    handler: functions/weather/get.handler
+    timeout: 10
+    events:
+      - httpApi:
+          path: /trips/{tripId}/weather
+          method: get
+          authorizer:
+            name: cognitoJwt
+
+  generatePlan:
+    handler: functions/plan/generate.handler
+    timeout: 29
+    events:
+      - httpApi:
+          path: /trips/{tripId}/plan/generate
+          method: post
+          authorizer:
+            name: cognitoJwt
+
+resources:
+  Resources:
+    TripPlannerUserPool:
+      Type: AWS::Cognito::UserPool
+      Properties:
+        UserPoolName: trip-planner-${self:provider.stage}
+        UsernameAttributes:
+          - email
+        AutoVerifiedAttributes:
+          - email
+        Policies:
+          PasswordPolicy:
+            MinimumLength: 8
+            RequireLowercase: true
+            RequireUppercase: true
+            RequireNumbers: true
+            RequireSymbols: false
+
+    TripPlannerUserPoolClient:
+      Type: AWS::Cognito::UserPoolClient
+      Properties:
+        ClientName: trip-planner-web-${self:provider.stage}
+        UserPoolId: !Ref TripPlannerUserPool
+        GenerateSecret: false
+        ExplicitAuthFlows:
+          - ALLOW_USER_PASSWORD_AUTH
+          - ALLOW_REFRESH_TOKEN_AUTH
+          - ALLOW_USER_SRP_AUTH
+
+    TripPlannerTable:
+      Type: AWS::DynamoDB::Table
+      Properties:
+        TableName: trip-planner-${self:provider.stage}
+        BillingMode: PAY_PER_REQUEST
+        AttributeDefinitions:
+          - AttributeName: pk
+            AttributeType: S
+          - AttributeName: sk
+            AttributeType: S
+          - AttributeName: GSI1pk
+            AttributeType: S
+          - AttributeName: GSI1sk
+            AttributeType: S
+        KeySchema:
+          - AttributeName: pk
+            KeyType: HASH
+          - AttributeName: sk
+            KeyType: RANGE
+        GlobalSecondaryIndexes:
+          - IndexName: GSI1
+            KeySchema:
+              - AttributeName: GSI1pk
+                KeyType: HASH
+              - AttributeName: GSI1sk
+                KeyType: RANGE
+            Projection:
+              ProjectionType: ALL
+
+  Outputs:
+    UserPoolId:
+      Value: !Ref TripPlannerUserPool
+    UserPoolClientId:
+      Value: !Ref TripPlannerUserPoolClient
+    HttpApiUrl:
+      Value: !Sub 'https://${HttpApi}.execute-api.${AWS::Region}.amazonaws.com'
+
+plugins:
+  - serverless-offline

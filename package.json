@@ -1,0 +1,27 @@
+{
+  "name": "trip-planner-api",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Serverless backend for MANIFEST, a collaborative AI group trip planner",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "offline": "serverless offline",
+    "deploy:dev": "serverless deploy --stage dev",
+    "deploy:prod": "serverless deploy --stage prod"
+  },
+  "dependencies": {
+    "@aws-sdk/client-bedrock-runtime": "^3.750.0",
+    "@aws-sdk/client-dynamodb": "^3.750.0",
+    "@aws-sdk/client-secrets-manager": "^3.750.0",
+    "@aws-sdk/lib-dynamodb": "^3.750.0",
+    "jsonwebtoken": "^9.0.2",
+    "jwks-rsa": "^3.1.0",
+    "nanoid": "^3.3.7"
+  },
+  "devDependencies": {
+    "serverless": "^3.39.0",
+    "serverless-offline": "^13.8.1"
+  }
+}

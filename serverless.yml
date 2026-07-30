@@ -216,8 +216,10 @@ resources:
       Value: !Ref TripPlannerUserPool
     UserPoolClientId:
       Value: !Ref TripPlannerUserPoolClient
-    HttpApiUrl:
-      Value: !Sub 'https://${HttpApi}.execute-api.${AWS::Region}.amazonaws.com'
+    # HttpApiUrl is intentionally not redefined here — Serverless Framework
+    # auto-generates an Output with this exact name for any httpApi event,
+    # and a duplicate definition here caused CloudFormation's
+    # "Value field ... must evaluate to a String and not a Map" error.
 
 plugins:
   - serverless-offline

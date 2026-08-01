@@ -33,6 +33,9 @@ exports.handler = async (event) => {
   if (!name || !startDatetime || !endDatetime) {
     return err(400, 'name, startDatetime, endDatetime are required')
   }
+  if (referenceLink && !/^https?:\/\//i.test(referenceLink)) {
+    return err(400, 'referenceLink must start with http:// or https://')
+  }
 
   const bookingId = nanoid(10)
   const bookingItem = {
@@ -47,8 +50,10 @@ exports.handler = async (event) => {
     endDatetime,
     confirmation: confirmation || null,
     cost: cost ?? null,
-    // Free-form reference (Booking.com/Airbnb/PDF confirmation/etc.) — not validated
-    // as a strict URL, just stored as given so a screenshot host link works too.
+    // Free-form reference (Booking.com/Airbnb/PDF confirmation/etc.) — validated
+    // as http(s)-only above (rendered as a raw href on the frontend, so anything
+    // else — e.g. a javascript: URL — must be rejected here, not just cosmetically
+    // on the client).
     referenceLink: referenceLink || null,
     addedBy: userId,
     createdAt: new Date().toISOString(),

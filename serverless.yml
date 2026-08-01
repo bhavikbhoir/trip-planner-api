@@ -88,6 +88,15 @@ functions:
           authorizer:
             name: cognitoJwt
 
+  previewTrip:
+    handler: functions/trips/preview.handler
+    events:
+      - httpApi:
+          path: /trips/{tripId}/preview
+          method: get
+          authorizer:
+            name: cognitoJwt
+
   joinTrip:
     handler: functions/trips/join.handler
     events:

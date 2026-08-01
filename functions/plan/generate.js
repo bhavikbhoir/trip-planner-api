@@ -6,6 +6,7 @@ const { getWeather } = require('../../shared/weather')
 const { invokeClaude } = require('../../shared/bedrock')
 
 const ICON_ENUM = ['plane', 'hotel', 'car', 'food', 'activity', 'other']
+const GENERATE_COOLDOWN_MS = 30 * 1000
 
 function buildPrompt({ trip, members, logistics, bookings, weather, suggestions }) {
   const preferenceLines = members
@@ -107,6 +108,24 @@ exports.handler = async (event) => {
 
   const isMember = members.some((m) => m.userId === userId)
   if (!isMember) return err(403, 'Not a member of this trip')
+
+  // Bedrock costs real money per call — this is a hard rate limit, not a UI nicety.
+  // Atomic conditional write closes the race window a naive get-then-check-then-put
+  // would leave open for two near-simultaneous requests.
+  const now = new Date()
+  const cutoff = new Date(now.getTime() - GENERATE_COOLDOWN_MS).toISOString()
+  try {
+    await db.updateIf(`TRIP#${tripId}`, 'META', {
+      UpdateExpression: 'SET lastGeneratedAt = :now',
+      ConditionExpression: 'attribute_not_exists(lastGeneratedAt) OR lastGeneratedAt < :cutoff',
+      ExpressionAttributeValues: { ':now': now.toISOString(), ':cutoff': cutoff },
+    })
+  } catch (e) {
+    if (e.name === 'ConditionalCheckFailedException') {
+      return err(429, 'Please wait a few seconds before regenerating.')
+    }
+    throw e
+  }
 
   const weather = await getWeather(trip.destination)
   const prompt = buildPrompt({ trip, members, logistics, bookings, weather, suggestions })

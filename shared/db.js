@@ -7,6 +7,7 @@ const {
   QueryCommand,
   BatchGetCommand,
   TransactWriteCommand,
+  UpdateCommand,
 } = require('@aws-sdk/lib-dynamodb')
 
 const client = new DynamoDBClient({ region: process.env.AWS_REGION || 'us-east-1' })
@@ -43,4 +44,19 @@ async function transactWrite(items) {
   await doc.send(new TransactWriteCommand({ TransactItems: items }))
 }
 
-module.exports = { doc, TABLE_NAME, get, put, del, query, batchGet, transactWrite }
+// Atomic conditional update — throws (e.name === 'ConditionalCheckFailedException')
+// if ConditionExpression doesn't hold, rather than a racy get-then-check-then-put.
+async function updateIf(pk, sk, { UpdateExpression, ConditionExpression, ExpressionAttributeValues, ExpressionAttributeNames }) {
+  await doc.send(
+    new UpdateCommand({
+      TableName: TABLE_NAME,
+      Key: { pk, sk },
+      UpdateExpression,
+      ConditionExpression,
+      ExpressionAttributeValues,
+      ExpressionAttributeNames,
+    })
+  )
+}
+
+module.exports = { doc, TABLE_NAME, get, put, del, query, batchGet, transactWrite, updateIf }

@@ -41,7 +41,7 @@ provider:
     cors:
       allowedOrigins:
         - http://localhost:5173
-        # TODO(prod): add the deployed Firebase Hosting origin, e.g. https://trip-planner.web.app
+        - https://trip-planner-manifest.web.app
       allowedHeaders:
         - Content-Type
         - Authorization

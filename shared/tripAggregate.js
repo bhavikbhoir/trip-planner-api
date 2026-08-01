@@ -13,8 +13,10 @@ async function getTripAggregate(tripId) {
   const plans = items
     .filter((i) => i.sk.startsWith('PLAN#'))
     .sort((a, b) => a.version - b.version)
+  const suggestions = items.filter((i) => i.sk.startsWith('SUGGESTION#'))
+  const approvals = items.filter((i) => i.sk.startsWith('APPROVAL#'))
 
-  return { trip, members, logistics, bookings, plans }
+  return { trip, members, logistics, bookings, plans, suggestions, approvals }
 }
 
 module.exports = { getTripAggregate }

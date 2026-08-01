@@ -26,7 +26,7 @@ exports.handler = async (event) => {
     return err(400, 'Invalid JSON body')
   }
 
-  const { type, name, location, startDatetime, endDatetime, confirmation, cost } = body
+  const { type, name, location, startDatetime, endDatetime, confirmation, cost, referenceLink } = body
   if (!VALID_TYPES.includes(type)) {
     return err(400, `type must be one of ${VALID_TYPES.join(', ')}`)
   }
@@ -47,6 +47,9 @@ exports.handler = async (event) => {
     endDatetime,
     confirmation: confirmation || null,
     cost: cost ?? null,
+    // Free-form reference (Booking.com/Airbnb/PDF confirmation/etc.) — not validated
+    // as a strict URL, just stored as given so a screenshot host link works too.
+    referenceLink: referenceLink || null,
     addedBy: userId,
     createdAt: new Date().toISOString(),
   }

@@ -13,6 +13,9 @@ exports.handler = async (event) => {
   const tripId = event.pathParameters?.tripId
   if (!tripId) return err(400, 'tripId is required')
 
+  const member = await db.get(`TRIP#${tripId}`, `MEMBER#${userId}`)
+  if (!member) return err(403, 'Not a member of this trip')
+
   let body
   try {
     body = JSON.parse(event.body || '{}')
@@ -20,26 +23,22 @@ exports.handler = async (event) => {
     return err(400, 'Invalid JSON body')
   }
 
-  const trip = await db.get(`TRIP#${tripId}`, 'META')
-  if (!trip) return err(404, 'Trip not found')
-
-  const existing = await db.get(`TRIP#${tripId}`, `MEMBER#${userId}`)
-  if (existing) return ok(200, { trip, alreadyMember: true })
-
-  const now = new Date().toISOString()
-  const memberItem = {
-    pk: `TRIP#${tripId}`,
-    sk: `MEMBER#${userId}`,
-    tripId,
-    userId,
-    displayName: body.displayName || null,
-    role: 'member',
-    joinedAt: now,
-    GSI1pk: `USER#${userId}`,
-    GSI1sk: `TRIP#${tripId}`,
+  const { planVersion } = body
+  if (!planVersion || typeof planVersion !== 'number') {
+    return err(400, 'planVersion (number) is required')
   }
 
-  await db.put(memberItem)
+  const approvalItem = {
+    pk: `TRIP#${tripId}`,
+    sk: `APPROVAL#${userId}#${planVersion}`,
+    tripId,
+    userId,
+    planVersion,
+    approved: true,
+    approvedAt: new Date().toISOString(),
+  }
 
-  return ok(200, { trip, member: memberItem })
+  await db.put(approvalItem)
+
+  return ok(200, { approval: approvalItem })
 }

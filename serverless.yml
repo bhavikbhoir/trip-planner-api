@@ -153,6 +153,42 @@ functions:
           authorizer:
             name: cognitoJwt
 
+  createSuggestion:
+    handler: functions/suggestions/create.handler
+    events:
+      - httpApi:
+          path: /trips/{tripId}/suggestions
+          method: post
+          authorizer:
+            name: cognitoJwt
+
+  removeSuggestion:
+    handler: functions/suggestions/remove.handler
+    events:
+      - httpApi:
+          path: /trips/{tripId}/suggestions/{suggestionId}
+          method: delete
+          authorizer:
+            name: cognitoJwt
+
+  upsertMyApproval:
+    handler: functions/approvals/upsert.handler
+    events:
+      - httpApi:
+          path: /trips/{tripId}/approvals/me
+          method: put
+          authorizer:
+            name: cognitoJwt
+
+  finalizeTrip:
+    handler: functions/trips/finalize.handler
+    events:
+      - httpApi:
+          path: /trips/{tripId}/finalize
+          method: post
+          authorizer:
+            name: cognitoJwt
+
 resources:
   Resources:
     TripPlannerUserPool:

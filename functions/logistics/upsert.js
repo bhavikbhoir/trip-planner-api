@@ -2,6 +2,8 @@ const db = require('../../shared/db')
 const { extractUserId } = require('../../shared/auth')
 const { ok, err } = require('../../shared/response')
 
+const VALID_TRANSPORT_MODES = ['driving', 'need_ride', 'not_driving']
+
 exports.handler = async (event) => {
   let userId
   try {
@@ -23,9 +25,12 @@ exports.handler = async (event) => {
     return err(400, 'Invalid JSON body')
   }
 
-  const { arrival, departure } = body
-  if (!arrival && !departure) {
-    return err(400, 'At least one of arrival or departure is required')
+  const { arrival, departure, transportMode, seatsAvailable } = body
+  if (!arrival && !departure && !transportMode) {
+    return err(400, 'At least one of arrival, departure, or transportMode is required')
+  }
+  if (transportMode !== undefined && !VALID_TRANSPORT_MODES.includes(transportMode)) {
+    return err(400, `transportMode must be one of ${VALID_TRANSPORT_MODES.join(', ')}`)
   }
 
   const logisticsItem = {
@@ -35,6 +40,10 @@ exports.handler = async (event) => {
     userId,
     arrival: arrival || null,
     departure: departure || null,
+    // Carpool coordination — seatsAvailable is only meaningful when transportMode is
+    // 'driving', but stored as given regardless rather than silently dropped.
+    transportMode: transportMode || null,
+    seatsAvailable: seatsAvailable ?? null,
     updatedAt: new Date().toISOString(),
   }
 

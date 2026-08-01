@@ -29,6 +29,7 @@ exports.handler = async (event) => {
 
   const updated = {
     ...member,
+    displayName: body.displayName !== undefined ? body.displayName : member.displayName || null,
     preferences: { ...(member.preferences || {}), ...(body.preferences || {}) },
     companions: body.companions !== undefined ? body.companions : member.companions || [],
     updatedAt: new Date().toISOString(),

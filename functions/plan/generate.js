@@ -7,7 +7,7 @@ const { invokeClaude } = require('../../shared/bedrock')
 
 const ICON_ENUM = ['plane', 'hotel', 'car', 'food', 'activity', 'other']
 
-function buildPrompt({ trip, members, logistics, bookings, weather }) {
+function buildPrompt({ trip, members, logistics, bookings, weather, suggestions }) {
   const preferenceLines = members
     .map((m) => {
       const p = m.preferences || {}
@@ -46,6 +46,11 @@ function buildPrompt({ trip, members, logistics, bookings, weather }) {
     ? `Current conditions in ${weather.city}: ${weather.temperature}°F, ${weather.condition}. Use this as loose seasonal context, not a per-day forecast.`
     : 'Weather data unavailable — do not reference specific conditions.'
 
+  const suggestionLines = (suggestions || [])
+    .filter((s) => s.status === 'open')
+    .map((s) => `- ${s.text}`)
+    .join('\n')
+
   return `You are planning a group trip itinerary.
 
 TRIP: ${trip.name} — ${trip.destination}, ${trip.startDate} to ${trip.endDate}
@@ -61,7 +66,10 @@ ${bookingLines || '(none provided)'}
 
 WEATHER: ${weatherLine}
 
-TASK: Produce a day-by-day itinerary from ${trip.startDate} to ${trip.endDate} that respects every anchor above and reflects the aggregated preferences (including companion ages).
+GROUP FEEDBACK TO INCORPORATE (the group has explicitly asked for these changes — work them into the plan):
+${suggestionLines || '(none)'}
+
+TASK: Produce a day-by-day itinerary from ${trip.startDate} to ${trip.endDate} that respects every anchor above, reflects the aggregated preferences (including companion ages), and incorporates the group feedback above where reasonable. For each event, include your best-effort approximate "lat"/"lng" decimal coordinates for a rough map view (these are estimates for a casual map pin, not authoritative geocoding) — omit both if the event has no single meaningful location (e.g. a travel/arrival event, or a free/rest block).
 
 Respond with ONLY valid JSON, no markdown fences, no commentary, in this exact shape:
 {
@@ -69,7 +77,7 @@ Respond with ONLY valid JSON, no markdown fences, no commentary, in this exact s
     {
       "date": "YYYY-MM-DD",
       "events": [
-        { "time": "H:MMa/p", "title": "string", "icon": "${ICON_ENUM.join('|')}", "note": "string or omit" }
+        { "time": "H:MMa/p", "title": "string", "icon": "${ICON_ENUM.join('|')}", "note": "string or omit", "lat": number or omit, "lng": number or omit }
       ]
     }
   ]
@@ -94,14 +102,14 @@ exports.handler = async (event) => {
   const tripId = event.pathParameters?.tripId
   if (!tripId) return err(400, 'tripId is required')
 
-  const { trip, members, logistics, bookings, plans } = await getTripAggregate(tripId)
+  const { trip, members, logistics, bookings, plans, suggestions } = await getTripAggregate(tripId)
   if (!trip) return err(404, 'Trip not found')
 
   const isMember = members.some((m) => m.userId === userId)
   if (!isMember) return err(403, 'Not a member of this trip')
 
   const weather = await getWeather(trip.destination)
-  const prompt = buildPrompt({ trip, members, logistics, bookings, weather })
+  const prompt = buildPrompt({ trip, members, logistics, bookings, weather, suggestions })
 
   let text
   try {
@@ -129,6 +137,20 @@ exports.handler = async (event) => {
   }
 
   await db.put(planItem)
+
+  const openSuggestions = (suggestions || []).filter((s) => s.status === 'open')
+  if (openSuggestions.length) {
+    try {
+      await Promise.all(
+        openSuggestions.map((s) =>
+          db.put({ ...s, status: 'resolved', resolvedAt: new Date().toISOString(), resolvedInVersion: version })
+        )
+      )
+    } catch {
+      // Best-effort — the plan itself was already saved successfully above;
+      // a failure here just leaves those suggestions marked 'open' for next time.
+    }
+  }
 
   return ok(201, { plan: planItem })
 }

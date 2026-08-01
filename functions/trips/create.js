@@ -18,7 +18,7 @@ exports.handler = async (event) => {
     return err(400, 'Invalid JSON body')
   }
 
-  const { name, destination, startDate, endDate } = body
+  const { name, destination, startDate, endDate, displayName } = body
   if (!name || !destination || !startDate || !endDate) {
     return err(400, 'name, destination, startDate, endDate are required')
   }
@@ -44,6 +44,7 @@ exports.handler = async (event) => {
     sk: `MEMBER#${userId}`,
     tripId,
     userId,
+    displayName: displayName || null,
     role: 'owner',
     joinedAt: now,
     GSI1pk: `USER#${userId}`,

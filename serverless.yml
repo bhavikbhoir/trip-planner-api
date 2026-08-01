@@ -189,6 +189,24 @@ functions:
           authorizer:
             name: cognitoJwt
 
+  leaveTrip:
+    handler: functions/members/leave.handler
+    events:
+      - httpApi:
+          path: /trips/{tripId}/members/me
+          method: delete
+          authorizer:
+            name: cognitoJwt
+
+  deleteTrip:
+    handler: functions/trips/deleteTrip.handler
+    events:
+      - httpApi:
+          path: /trips/{tripId}
+          method: delete
+          authorizer:
+            name: cognitoJwt
+
 resources:
   Resources:
     TripPlannerUserPool:

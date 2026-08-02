@@ -180,7 +180,11 @@ functions:
   # Gateway, so it isn't bound by HTTP API's hard 29s synchronous-integration ceiling.
   generateWorker:
     handler: functions/plan/generateWorker.handler
-    timeout: 90
+    # Raised alongside maxTokens (3000 -> 8000): worst-case generation speed
+    # could otherwise approach or exceed 90s for a full 8000-token response.
+    # No API Gateway ceiling applies here (invoked async), so there's no
+    # reason to be tight — Lambda supports up to 900s.
+    timeout: 180
 
   createSuggestion:
     handler: functions/suggestions/create.handler

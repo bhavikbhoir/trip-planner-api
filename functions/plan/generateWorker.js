@@ -5,7 +5,24 @@ const { invokeClaude } = require('../../shared/bedrock')
 
 const ICON_ENUM = ['plane', 'hotel', 'car', 'food', 'activity', 'other']
 
-function buildPrompt({ trip, members, logistics, bookings, weather, suggestions }) {
+function summarizePlan(plan) {
+  // Deliberately compact (time/title/icon/cost only, no notes/lat/lng) —
+  // this exists so the model has the current itinerary as a baseline to
+  // revise, not to re-supply every detail it already generated once;
+  // keeping it terse leaves the output token budget for the actual
+  // response. Cost is included so a revision doesn't silently drop prices
+  // the model already estimated for unaffected events.
+  return plan.days
+    .map((d) => {
+      const lines = d.events
+        .map((e) => `  ${e.time} ${e.title} [${e.icon}]${e.costPerPerson != null ? ` ~$${e.costPerPerson}/person` : ''}`)
+        .join('\n')
+      return `${d.date}:\n${lines}`
+    })
+    .join('\n')
+}
+
+function buildPrompt({ trip, members, logistics, bookings, weather, suggestions, latestPlan }) {
   // Members carry displayName directly; logistics items only have a userId,
   // so cross-reference through this map — without it (the original bug),
   // the prompt only ever saw raw Cognito user ids, and Claude normalized
@@ -74,8 +91,19 @@ WEATHER: ${weatherLine}
 
 GROUP FEEDBACK TO INCORPORATE (the group has explicitly asked for these changes — work them into the plan):
 ${suggestionLines || '(none)'}
-
-TASK: Produce a day-by-day itinerary from ${trip.startDate} to ${trip.endDate} that respects every anchor above, reflects the aggregated preferences (including companion ages), and incorporates the group feedback above where reasonable. When an event involves a specific traveler (e.g. an arrival/departure), refer to them by the actual name given above (e.g. "Shrija arrives") — never invent generic labels like "Traveler 1" or "Traveler 3 (trip owner)". For each event, include your best-effort approximate "lat"/"lng" decimal coordinates for a rough map view (these are estimates for a casual map pin, not authoritative geocoding) — omit both if the event has no single meaningful location (e.g. a travel/arrival event, or a free/rest block).
+${
+  latestPlan
+    ? `
+CURRENT ITINERARY (v${latestPlan.version}) — this is the plan as it stands today:
+${summarizePlan(latestPlan)}
+`
+    : ''
+}
+TASK: ${
+    latestPlan
+      ? `Revise the CURRENT ITINERARY above to incorporate the group feedback and any preference/logistics changes reflected elsewhere in this prompt. Keep what's already working — do not regenerate the whole trip from scratch or restructure days that aren't affected by the feedback, unless a hard anchor (arrival/departure/booking) genuinely requires it.`
+      : `Produce a day-by-day itinerary from ${trip.startDate} to ${trip.endDate}.`
+  } Respect every anchor above, reflect the aggregated preferences (including companion ages), and incorporate the group feedback above where reasonable. When an event involves a specific traveler (e.g. an arrival/departure), refer to them by the actual name given above (e.g. "Shrija arrives") — never invent generic labels like "Traveler 1" or "Traveler 3 (trip owner)". For each event, include your best-effort approximate "lat"/"lng" decimal coordinates for a rough map view (these are estimates for a casual map pin, not authoritative geocoding) — omit both if the event has no single meaningful location (e.g. a travel/arrival event, or a free/rest block). For any event with a real per-person cost (museum/attraction tickets, restaurant meals, tours, etc.), include your best-effort approximate "costPerPerson" as a whole-number USD estimate (e.g. a $25 ticket, a $18 meal) so the group can judge affordability at a glance — omit it for events with no inherent per-person cost (arrivals, free activities, rest blocks, transit).
 
 Respond with ONLY valid JSON, no markdown fences, no commentary, in this exact shape:
 {
@@ -83,7 +111,7 @@ Respond with ONLY valid JSON, no markdown fences, no commentary, in this exact s
     {
       "date": "YYYY-MM-DD",
       "events": [
-        { "time": "H:MMa/p", "title": "string", "icon": "${ICON_ENUM.join('|')}", "note": "string or omit", "lat": number or omit, "lng": number or omit }
+        { "time": "H:MMa/p", "title": "string", "icon": "${ICON_ENUM.join('|')}", "note": "string or omit", "lat": number or omit, "lng": number or omit, "costPerPerson": number (whole USD) or omit }
       ]
     }
   ]
@@ -122,11 +150,16 @@ exports.handler = async (event) => {
     }
 
     const weather = await getWeather(trip.destination)
-    const prompt = buildPrompt({ trip, members, logistics, bookings, weather, suggestions })
+    const latestPlan = plans.length ? plans.reduce((a, b) => (b.version > a.version ? b : a)) : null
+    const prompt = buildPrompt({ trip, members, logistics, bookings, weather, suggestions, latestPlan })
 
     let text
     try {
-      text = await invokeClaude({ prompt, model: 'sonnet', maxTokens: 3000 })
+      // 3000 was too low for a real multi-day itinerary once event notes grew
+      // detailed — Bedrock would hit the cap mid-string, producing invalid
+      // JSON ("Unterminated string..."). 8000 stays under Sonnet's 8192
+      // output ceiling with real headroom.
+      text = await invokeClaude({ prompt, model: 'sonnet', maxTokens: 8000 })
     } catch (e) {
       await recordError(tripId, `AI generation failed: ${e.message}`)
       return

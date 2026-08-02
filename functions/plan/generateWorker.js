@@ -6,6 +6,14 @@ const { invokeClaude } = require('../../shared/bedrock')
 const ICON_ENUM = ['plane', 'hotel', 'car', 'food', 'activity', 'other']
 
 function buildPrompt({ trip, members, logistics, bookings, weather, suggestions }) {
+  // Members carry displayName directly; logistics items only have a userId,
+  // so cross-reference through this map — without it (the original bug),
+  // the prompt only ever saw raw Cognito user ids, and Claude normalized
+  // them into generic "Traveler 1/2/3" labels since it never knew anyone's
+  // actual name.
+  const nameById = new Map(members.map((m) => [m.userId, m.displayName || 'A traveler']))
+  const nameFor = (userId) => nameById.get(userId) || 'A traveler'
+
   const preferenceLines = members
     .map((m) => {
       const p = m.preferences || {}
@@ -13,7 +21,7 @@ function buildPrompt({ trip, members, logistics, bookings, weather, suggestions 
         .map((c) => `${c.name} (age ${c.age})`)
         .join(', ')
       return [
-        `- Traveler ${m.userId}${m.role === 'owner' ? ' (trip owner)' : ''}:`,
+        `- ${nameFor(m.userId)}${m.role === 'owner' ? ' (trip owner)' : ''}:`,
         p.food?.length ? `  food: ${p.food.join(', ')}` : null,
         p.activities?.length ? `  activities: ${p.activities.join(', ')}` : null,
         p.budgetPace?.length ? `  budget/pace: ${p.budgetPace.join(', ')}` : null,
@@ -32,7 +40,7 @@ function buildPrompt({ trip, members, logistics, bookings, weather, suggestions 
       const parts = []
       if (l.arrival) parts.push(`arrives ${l.arrival.datetime || ''} (${l.arrival.flight || 'flight TBD'})`)
       if (l.departure) parts.push(`departs ${l.departure.datetime || ''} (${l.departure.flight || 'flight TBD'})`)
-      return `- ${l.userId}: ${parts.join('; ')}`
+      return `- ${nameFor(l.userId)}: ${parts.join('; ')}`
     })
     .join('\n')
 
@@ -67,7 +75,7 @@ WEATHER: ${weatherLine}
 GROUP FEEDBACK TO INCORPORATE (the group has explicitly asked for these changes — work them into the plan):
 ${suggestionLines || '(none)'}
 
-TASK: Produce a day-by-day itinerary from ${trip.startDate} to ${trip.endDate} that respects every anchor above, reflects the aggregated preferences (including companion ages), and incorporates the group feedback above where reasonable. For each event, include your best-effort approximate "lat"/"lng" decimal coordinates for a rough map view (these are estimates for a casual map pin, not authoritative geocoding) — omit both if the event has no single meaningful location (e.g. a travel/arrival event, or a free/rest block).
+TASK: Produce a day-by-day itinerary from ${trip.startDate} to ${trip.endDate} that respects every anchor above, reflects the aggregated preferences (including companion ages), and incorporates the group feedback above where reasonable. When an event involves a specific traveler (e.g. an arrival/departure), refer to them by the actual name given above (e.g. "Shrija arrives") — never invent generic labels like "Traveler 1" or "Traveler 3 (trip owner)". For each event, include your best-effort approximate "lat"/"lng" decimal coordinates for a rough map view (these are estimates for a casual map pin, not authoritative geocoding) — omit both if the event has no single meaningful location (e.g. a travel/arrival event, or a free/rest block).
 
 Respond with ONLY valid JSON, no markdown fences, no commentary, in this exact shape:
 {

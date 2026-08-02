@@ -17,7 +17,9 @@ async function fetchWeather(city) {
   const apiKey = await getApiKey()
   const url = `${WEATHER_API_URL}?q=${encodeURIComponent(city)}&appid=${apiKey}&units=imperial`
 
-  const res = await fetch(url)
+  // Explicit fast-fail — a hanging/slow upstream shouldn't be able to eat
+  // more than ~4s per attempt (~8s total across the one retry below).
+  const res = await fetch(url, { signal: AbortSignal.timeout(4000) })
   if (!res.ok) throw new Error(`Weather API returned ${res.status}`)
 
   const data = await res.json()

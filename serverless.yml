@@ -37,6 +37,11 @@ provider:
             - secretsmanager:GetSecretValue
           Resource:
             - !Sub 'arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:trip-planner/weather-api-key-*'
+        - Effect: Allow
+          Action:
+            - lambda:InvokeFunction
+          Resource:
+            - !GetAtt GenerateWorkerLambdaFunction.Arn
   httpApi:
     cors:
       allowedOrigins:
@@ -154,13 +159,21 @@ functions:
 
   generatePlan:
     handler: functions/plan/generate.handler
-    timeout: 29
+    timeout: 10
+    environment:
+      GENERATE_WORKER_FUNCTION_NAME: !Ref GenerateWorkerLambdaFunction
     events:
       - httpApi:
           path: /trips/{tripId}/plan/generate
           method: post
           authorizer:
             name: cognitoJwt
+
+  # No httpApi event — invoked directly (async) by generatePlan, not through API
+  # Gateway, so it isn't bound by HTTP API's hard 29s synchronous-integration ceiling.
+  generateWorker:
+    handler: functions/plan/generateWorker.handler
+    timeout: 90
 
   createSuggestion:
     handler: functions/suggestions/create.handler

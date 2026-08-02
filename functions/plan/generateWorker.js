@@ -5,21 +5,75 @@ const { invokeClaude } = require('../../shared/bedrock')
 
 const ICON_ENUM = ['plane', 'hotel', 'car', 'food', 'activity', 'other']
 
+// Forcing the response through this tool (via tool_choice) replaces the old
+// "respond with ONLY valid JSON, no markdown fences" text instruction — the
+// model can no longer hand back a truncated string or fenced code block,
+// since tool_use.input arrives already parsed and schema-conformant.
+const ITINERARY_TOOL = {
+  name: 'propose_itinerary',
+  description: 'Propose or revise the day-by-day trip itinerary.',
+  input_schema: {
+    type: 'object',
+    properties: {
+      days: {
+        type: 'array',
+        items: {
+          type: 'object',
+          properties: {
+            date: { type: 'string', description: 'YYYY-MM-DD' },
+            events: {
+              type: 'array',
+              items: {
+                type: 'object',
+                properties: {
+                  time: { type: 'string', description: 'e.g. "9:40a", "6:00p"' },
+                  title: { type: 'string' },
+                  icon: { type: 'string', enum: ICON_ENUM },
+                  note: { type: 'string', description: 'Optional — omit if not useful' },
+                  lat: { type: 'number', description: 'Optional — omit if the event has no single meaningful location' },
+                  lng: { type: 'number', description: 'Optional — omit if the event has no single meaningful location' },
+                  costPerPerson: { type: 'number', description: 'Optional — whole-number USD estimate, omit if no inherent per-person cost' },
+                  timeToSpend: { type: 'string', description: 'Optional — e.g. "1-1.5 hrs", omit for quick logistics events' },
+                },
+                required: ['time', 'title', 'icon'],
+              },
+            },
+          },
+          required: ['date', 'events'],
+        },
+      },
+    },
+    required: ['days'],
+  },
+}
+
 function summarizePlan(plan) {
-  // Deliberately compact (time/title/icon/cost only, no notes/lat/lng) —
-  // this exists so the model has the current itinerary as a baseline to
+  // Deliberately compact (time/title/icon/cost/duration only, no notes/lat/lng)
+  // — this exists so the model has the current itinerary as a baseline to
   // revise, not to re-supply every detail it already generated once;
   // keeping it terse leaves the output token budget for the actual
-  // response. Cost is included so a revision doesn't silently drop prices
-  // the model already estimated for unaffected events.
+  // response. Cost and duration are included so a revision doesn't
+  // silently drop estimates already made for unaffected events.
   return plan.days
     .map((d) => {
       const lines = d.events
-        .map((e) => `  ${e.time} ${e.title} [${e.icon}]${e.costPerPerson != null ? ` ~$${e.costPerPerson}/person` : ''}`)
+        .map((e) => {
+          const cost = e.costPerPerson != null ? ` ~$${e.costPerPerson}/person` : ''
+          const duration = e.timeToSpend ? ` (${e.timeToSpend})` : ''
+          return `  ${e.time} ${e.title} [${e.icon}]${duration}${cost}`
+        })
         .join('\n')
       return `${d.date}:\n${lines}`
     })
     .join('\n')
+}
+
+const TRIP_TYPE_GUIDANCE = {
+  business: 'This is a business trip — respect likely work hours, keep evenings lower-key, and don\'t assume everyone wants to socialize non-stop.',
+  date: 'This is a date trip — favor intimate, small-scale venues and avoid large, crowded group-activity suggestions.',
+  family: 'This is a family trip — plan as multi-generational and kid-friendly by default (gentler pacing, fewer late nights) even where explicit companion ages aren\'t given.',
+  friends: 'This is a friends trip — feel free to be social and flexible; a packed schedule and nightlife are welcome here.',
+  leisure: 'This is a general leisure trip — no particular skew, use sensible relaxed defaults.',
 }
 
 function buildPrompt({ trip, members, logistics, bookings, weather, suggestions, latestPlan }) {
@@ -54,9 +108,22 @@ function buildPrompt({ trip, members, logistics, bookings, weather, suggestions,
 
   const logisticsLines = logistics
     .map((l) => {
+      const driving = l.transportMode === 'driving'
       const parts = []
-      if (l.arrival) parts.push(`arrives ${l.arrival.datetime || ''} (${l.arrival.flight || 'flight TBD'})`)
-      if (l.departure) parts.push(`departs ${l.departure.datetime || ''} (${l.departure.flight || 'flight TBD'})`)
+      if (l.arrival) {
+        parts.push(
+          driving
+            ? `driving, planning to arrive by ${l.arrival.datetime || ''}`
+            : `arrives ${l.arrival.datetime || ''} (${l.arrival.flight || 'flight TBD'})`
+        )
+      }
+      if (l.departure) {
+        parts.push(
+          driving
+            ? `needs to leave by ${l.departure.datetime || ''}`
+            : `departs ${l.departure.datetime || ''} (${l.departure.flight || 'flight TBD'})`
+        )
+      }
       return `- ${nameFor(l.userId)}: ${parts.join('; ')}`
     })
     .join('\n')
@@ -74,9 +141,11 @@ function buildPrompt({ trip, members, logistics, bookings, weather, suggestions,
     .map((s) => `- ${s.text}`)
     .join('\n')
 
+  const tripTypeLine = trip.tripType && TRIP_TYPE_GUIDANCE[trip.tripType] ? `\n${TRIP_TYPE_GUIDANCE[trip.tripType]}` : ''
+
   return `You are planning a group trip itinerary.
 
-TRIP: ${trip.name} — ${trip.destination}, ${trip.startDate} to ${trip.endDate}
+TRIP: ${trip.name} — ${trip.destination}, ${trip.startDate} to ${trip.endDate}${tripTypeLine}
 
 TRAVELER PREFERENCES:
 ${preferenceLines || '(no preferences submitted yet — use sensible general-audience defaults)'}
@@ -103,26 +172,16 @@ TASK: ${
     latestPlan
       ? `Revise the CURRENT ITINERARY above to incorporate the group feedback and any preference/logistics changes reflected elsewhere in this prompt. Keep what's already working — do not regenerate the whole trip from scratch or restructure days that aren't affected by the feedback, unless a hard anchor (arrival/departure/booking) genuinely requires it.`
       : `Produce a day-by-day itinerary from ${trip.startDate} to ${trip.endDate}.`
-  } Respect every anchor above, reflect the aggregated preferences (including companion ages), and incorporate the group feedback above where reasonable. When an event involves a specific traveler (e.g. an arrival/departure), refer to them by the actual name given above (e.g. "Shrija arrives") — never invent generic labels like "Traveler 1" or "Traveler 3 (trip owner)". For each event, include your best-effort approximate "lat"/"lng" decimal coordinates for a rough map view (these are estimates for a casual map pin, not authoritative geocoding) — omit both if the event has no single meaningful location (e.g. a travel/arrival event, or a free/rest block). For any event with a real per-person cost (museum/attraction tickets, restaurant meals, tours, etc.), include your best-effort approximate "costPerPerson" as a whole-number USD estimate (e.g. a $25 ticket, a $18 meal) so the group can judge affordability at a glance — omit it for events with no inherent per-person cost (arrivals, free activities, rest blocks, transit).
+  } Respect every anchor above, reflect the aggregated preferences (including companion ages), and incorporate the group feedback above where reasonable. When an event involves a specific traveler (e.g. an arrival/departure), refer to them by the actual name given above (e.g. "Shrija arrives") — never invent generic labels like "Traveler 1" or "Traveler 3 (trip owner)". For each event, include your best-effort approximate "lat"/"lng" decimal coordinates for a rough map view (these are estimates for a casual map pin, not authoritative geocoding) — omit both if the event has no single meaningful location (e.g. a travel/arrival event, or a free/rest block). For any event with a real per-person cost (museum/attraction tickets, restaurant meals, tours, etc.), include your best-effort approximate "costPerPerson" as a whole-number USD estimate (e.g. a $25 ticket, a $18 meal) so the group can judge affordability at a glance — omit it for events with no inherent per-person cost (arrivals, free activities, rest blocks, transit). Include a "timeToSpend" duration estimate (e.g. "1–1.5 hrs") on events where that's meaningful (activities, meals, attractions) — omit it for quick logistics events (arrivals, short transit hops). For any car-based travel segment (a driving member's logistics, or a long drive between stops) and generally across a full day, build in natural rest/coffee/freshen-up breaks every couple of hours rather than scheduling back-to-back activities with no downtime — insert these as their own short events when they're a real planning consideration, not on every single transition. Where genuinely useful, weave extra practical guidance into an event's "note" — expected wait times (e.g. a popular restaurant at peak hours), the best time/spot for photos, or typical opening/closing hours — but only where it adds real value, not as boilerplate on every event, and phrase hours/wait-time claims as general guidance to verify locally rather than as confirmed facts. If you ever suggest a movie/cinema activity, do not invent a specific showtime as if it's confirmed — note that showtimes should be checked directly with the venue, since this planner has no access to real showtime data.
 
-Respond with ONLY valid JSON, no markdown fences, no commentary, in this exact shape:
-{
-  "days": [
-    {
-      "date": "YYYY-MM-DD",
-      "events": [
-        { "time": "H:MMa/p", "title": "string", "icon": "${ICON_ENUM.join('|')}", "note": "string or omit", "lat": number or omit, "lng": number or omit, "costPerPerson": number (whole USD) or omit }
-      ]
-    }
-  ]
-}`
+Call the propose_itinerary tool with the full itinerary — do not respond with plain text.`
 }
 
-function parsePlanJSON(text) {
-  const cleaned = text.trim().replace(/^```(?:json)?/i, '').replace(/```$/, '').trim()
-  const parsed = JSON.parse(cleaned)
-  if (!Array.isArray(parsed.days)) throw new Error('Response missing "days" array')
-  return parsed
+function validatePlan(planBody) {
+  if (!planBody || !Array.isArray(planBody.days)) {
+    throw new Error('Tool call missing "days" array')
+  }
+  return planBody
 }
 
 // Best-effort — records the failure onto the Trip META item so the frontend
@@ -153,23 +212,23 @@ exports.handler = async (event) => {
     const latestPlan = plans.length ? plans.reduce((a, b) => (b.version > a.version ? b : a)) : null
     const prompt = buildPrompt({ trip, members, logistics, bookings, weather, suggestions, latestPlan })
 
-    let text
-    try {
-      // 3000 was too low for a real multi-day itinerary once event notes grew
-      // detailed — Bedrock would hit the cap mid-string, producing invalid
-      // JSON ("Unterminated string..."). 8000 stays under Sonnet's 8192
-      // output ceiling with real headroom.
-      text = await invokeClaude({ prompt, model: 'sonnet', maxTokens: 8000 })
-    } catch (e) {
-      await recordError(tripId, `AI generation failed: ${e.message}`)
-      return
-    }
-
     let planBody
     try {
-      planBody = parsePlanJSON(text)
+      // 3000 was too low for a real multi-day itinerary once event notes grew
+      // detailed — Bedrock would hit the cap mid-string. 8000 stays under
+      // Sonnet's 8192 output ceiling with real headroom. Forcing the
+      // response through ITINERARY_TOOL means a truncated response now
+      // fails as an incomplete tool call rather than unparseable text.
+      const toolInput = await invokeClaude({
+        prompt,
+        model: 'sonnet',
+        maxTokens: 8000,
+        tools: [ITINERARY_TOOL],
+        toolChoice: { type: 'tool', name: 'propose_itinerary' },
+      })
+      planBody = validatePlan(toolInput)
     } catch (e) {
-      await recordError(tripId, `AI returned unparseable itinerary JSON: ${e.message}`)
+      await recordError(tripId, `AI generation failed: ${e.message}`)
       return
     }
 

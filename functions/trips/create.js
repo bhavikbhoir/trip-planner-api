@@ -18,9 +18,14 @@ exports.handler = async (event) => {
     return err(400, 'Invalid JSON body')
   }
 
-  const { name, destination, startDate, endDate, displayName } = body
+  const { name, destination, startDate, endDate, displayName, tripType } = body
   if (!name || !destination || !startDate || !endDate) {
     return err(400, 'name, destination, startDate, endDate are required')
+  }
+
+  const VALID_TRIP_TYPES = ['business', 'leisure', 'friends', 'family', 'date']
+  if (tripType !== undefined && tripType !== null && !VALID_TRIP_TYPES.includes(tripType)) {
+    return err(400, `tripType must be one of ${VALID_TRIP_TYPES.join(', ')}`)
   }
 
   const tripId = nanoid(10)
@@ -37,6 +42,7 @@ exports.handler = async (event) => {
     ownerId: userId,
     status: 'planning',
     createdAt: now,
+    tripType: tripType || null,
   }
 
   const memberItem = {

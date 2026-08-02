@@ -100,6 +100,15 @@ functions:
           authorizer:
             name: cognitoJwt
 
+  getTripToday:
+    handler: functions/trips/today.handler
+    events:
+      - httpApi:
+          path: /trips/{tripId}/today
+          method: get
+          authorizer:
+            name: cognitoJwt
+
   previewTrip:
     handler: functions/trips/preview.handler
     events:

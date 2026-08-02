@@ -41,7 +41,14 @@ provider:
           Action:
             - lambda:InvokeFunction
           Resource:
-            - !GetAtt GenerateWorkerLambdaFunction.Arn
+            # Built as a string, not !GetAtt GenerateWorkerLambdaFunction.Arn —
+            # that created a circular dependency: this statement lives on the
+            # shared IamRoleLambdaExecution role that every function
+            # (including generateWorker itself) uses as its execution role,
+            # so a direct resource reference here means the role needs the
+            # function and the function needs the role. Only pseudo-params
+            # here (AWS::Region/AccountId), no dependency edge to break.
+            - !Sub 'arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:trip-planner-api-${self:provider.stage}-generateWorker'
   httpApi:
     cors:
       allowedOrigins:

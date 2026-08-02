@@ -1,3 +1,4 @@
+const { nanoid } = require('nanoid')
 const db = require('../../shared/db')
 const { extractUserId } = require('../../shared/auth')
 const { ok, err } = require('../../shared/response')
@@ -26,6 +27,13 @@ exports.handler = async (event) => {
   const existing = await db.get(`TRIP#${tripId}`, `MEMBER#${userId}`)
   if (existing) return ok(200, { trip, alreadyMember: true })
 
+  // Existing members to notify — queried before this join is written, so the
+  // joiner never notifies themselves.
+  const existingMembers = await db.query({
+    KeyConditionExpression: 'pk = :p AND begins_with(sk, :m)',
+    ExpressionAttributeValues: { ':p': `TRIP#${tripId}`, ':m': 'MEMBER#' },
+  })
+
   const now = new Date().toISOString()
   const memberItem = {
     pk: `TRIP#${tripId}`,
@@ -40,6 +48,25 @@ exports.handler = async (event) => {
   }
 
   await db.put(memberItem)
+
+  await Promise.all(
+    existingMembers.map((m) => {
+      const notifId = nanoid(10)
+      return db.put({
+        pk: `TRIP#${tripId}`,
+        sk: `NOTIFICATION#${notifId}`,
+        GSI2pk: `USER#${m.userId}`,
+        GSI2sk: `NOTIFICATION#${now}#${notifId}`,
+        tripId,
+        tripName: trip.name,
+        type: 'member_joined',
+        actorId: userId,
+        actorDisplayName: body.displayName || null,
+        createdAt: now,
+        read: false,
+      })
+    })
+  )
 
   return ok(200, { trip, member: memberItem })
 }

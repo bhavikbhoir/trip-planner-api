@@ -216,6 +216,24 @@ functions:
           authorizer:
             name: cognitoJwt
 
+  listNotifications:
+    handler: functions/notifications/list.handler
+    events:
+      - httpApi:
+          path: /notifications
+          method: get
+          authorizer:
+            name: cognitoJwt
+
+  markNotificationsRead:
+    handler: functions/notifications/markRead.handler
+    events:
+      - httpApi:
+          path: /notifications/mark-read
+          method: post
+          authorizer:
+            name: cognitoJwt
+
 resources:
   Resources:
     TripPlannerUserPool:
@@ -259,6 +277,10 @@ resources:
             AttributeType: S
           - AttributeName: GSI1sk
             AttributeType: S
+          - AttributeName: GSI2pk
+            AttributeType: S
+          - AttributeName: GSI2sk
+            AttributeType: S
         KeySchema:
           - AttributeName: pk
             KeyType: HASH
@@ -270,6 +292,14 @@ resources:
               - AttributeName: GSI1pk
                 KeyType: HASH
               - AttributeName: GSI1sk
+                KeyType: RANGE
+            Projection:
+              ProjectionType: ALL
+          - IndexName: GSI2
+            KeySchema:
+              - AttributeName: GSI2pk
+                KeyType: HASH
+              - AttributeName: GSI2sk
                 KeyType: RANGE
             Projection:
               ProjectionType: ALL

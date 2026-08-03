@@ -181,6 +181,25 @@ functions:
           authorizer:
             name: cognitoJwt
 
+  generateAdvisorTips:
+    handler: functions/advisor/generate.handler
+    timeout: 15
+    events:
+      - httpApi:
+          path: /trips/{tripId}/advisor/generate
+          method: post
+          authorizer:
+            name: cognitoJwt
+
+  dismissAdvisorTip:
+    handler: functions/advisor/dismiss.handler
+    events:
+      - httpApi:
+          path: /trips/{tripId}/advisor/{tipId}
+          method: delete
+          authorizer:
+            name: cognitoJwt
+
   getWeather:
     handler: functions/weather/get.handler
     timeout: 10

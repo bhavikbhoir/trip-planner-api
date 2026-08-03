@@ -195,6 +195,24 @@ functions:
     # reason to be tight — Lambda supports up to 900s.
     timeout: 180
 
+  markEventDone:
+    handler: functions/events/markDone.handler
+    events:
+      - httpApi:
+          path: /trips/{tripId}/events/{eventId}/done
+          method: put
+          authorizer:
+            name: cognitoJwt
+
+  unmarkEventDone:
+    handler: functions/events/unmarkDone.handler
+    events:
+      - httpApi:
+          path: /trips/{tripId}/events/{eventId}/done
+          method: delete
+          authorizer:
+            name: cognitoJwt
+
   createSuggestion:
     handler: functions/suggestions/create.handler
     events:

@@ -1,3 +1,4 @@
+const { nanoid } = require('nanoid')
 const db = require('../../shared/db')
 const { getTripAggregate } = require('../../shared/tripAggregate')
 const { getWeather } = require('../../shared/weather')
@@ -184,6 +185,20 @@ function validatePlan(planBody) {
   return planBody
 }
 
+// The model has no reason to invent stable identifiers for events (and
+// regenerating the same day would produce different ones if it did) — so
+// eventIds are assigned here, server-side, once, at save time. This gives
+// per-event features (checklists, and later comments/wait-time overrides)
+// something durable to key off, without touching the generation prompt.
+function assignEventIds(planBody) {
+  for (const day of planBody.days) {
+    for (const ev of day.events) {
+      ev.eventId = nanoid(8)
+    }
+  }
+  return planBody
+}
+
 // Best-effort — records the failure onto the Trip META item so the frontend
 // can surface it via polling, since nothing is listening on an HTTP response
 // for this handler (it's invoked async by generate.js, not through API Gateway).
@@ -226,7 +241,7 @@ exports.handler = async (event) => {
         tools: [ITINERARY_TOOL],
         toolChoice: { type: 'tool', name: 'propose_itinerary' },
       })
-      planBody = validatePlan(toolInput)
+      planBody = assignEventIds(validatePlan(toolInput))
     } catch (e) {
       await recordError(tripId, `AI generation failed: ${e.message}`)
       return

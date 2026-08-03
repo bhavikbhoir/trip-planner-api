@@ -35,7 +35,7 @@ exports.handler = async (event) => {
   const tripId = event.pathParameters?.tripId
   if (!tripId) return err(400, 'tripId is required')
 
-  const { trip, members, bookings, plans } = await getTripAggregate(tripId)
+  const { trip, members, bookings, plans, eventCompletions } = await getTripAggregate(tripId)
   if (!trip) return err(404, 'Trip not found')
 
   const isMember = members.some((m) => m.userId === userId)
@@ -46,9 +46,13 @@ exports.handler = async (event) => {
   // server's UTC date if the client omits it.
   const date = event.queryStringParameters?.date || new Date().toISOString().slice(0, 10)
 
+  const doneEventIds = new Set((eventCompletions || []).map((c) => c.eventId))
   const latestPlan = plans.length ? plans.reduce((a, b) => (b.version > a.version ? b : a)) : null
   const day = latestPlan?.days?.find((d) => d.date === date) || null
-  const events = (day?.events || []).slice().sort((a, b) => timeToMinutes(a.time) - timeToMinutes(b.time))
+  const events = (day?.events || [])
+    .slice()
+    .sort((a, b) => timeToMinutes(a.time) - timeToMinutes(b.time))
+    .map((ev) => ({ ...ev, done: doneEventIds.has(ev.eventId) }))
 
   const activeBookings = bookings.filter((b) => bookingCoversDate(b, date))
 

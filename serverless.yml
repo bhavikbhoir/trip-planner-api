@@ -163,6 +163,24 @@ functions:
           authorizer:
             name: cognitoJwt
 
+  createExpense:
+    handler: functions/expenses/create.handler
+    events:
+      - httpApi:
+          path: /trips/{tripId}/expenses
+          method: post
+          authorizer:
+            name: cognitoJwt
+
+  removeExpense:
+    handler: functions/expenses/remove.handler
+    events:
+      - httpApi:
+          path: /trips/{tripId}/expenses/{expenseId}
+          method: delete
+          authorizer:
+            name: cognitoJwt
+
   getWeather:
     handler: functions/weather/get.handler
     timeout: 10

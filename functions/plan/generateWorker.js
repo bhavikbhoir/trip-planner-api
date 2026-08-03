@@ -3,6 +3,7 @@ const db = require('../../shared/db')
 const { getTripAggregate } = require('../../shared/tripAggregate')
 const { getWeather } = require('../../shared/weather')
 const { invokeClaude } = require('../../shared/bedrock')
+const { notifyMembers } = require('../../shared/notify')
 
 const ICON_ENUM = ['plane', 'hotel', 'car', 'food', 'activity', 'other']
 
@@ -259,6 +260,23 @@ exports.handler = async (event) => {
     }
 
     await db.put(planItem)
+
+    // A fresh version resets what "approved" means for everyone but whoever
+    // just triggered this — they're already looking at the result. Best-effort:
+    // the plan itself is already saved above, so a notification failure here
+    // shouldn't surface as a generation failure.
+    try {
+      await notifyMembers({
+        tripId,
+        tripName: trip.name,
+        recipients: members.filter((m) => m.userId !== userId).map((m) => m.userId),
+        type: 'plan_generated',
+        actorId: userId,
+        actorDisplayName: members.find((m) => m.userId === userId)?.displayName || null,
+      })
+    } catch (e) {
+      console.error('Failed to notify members of new plan', tripId, e.message)
+    }
 
     const openSuggestions = (suggestions || []).filter((s) => s.status === 'open')
     if (openSuggestions.length) {

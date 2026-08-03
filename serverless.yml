@@ -322,6 +322,15 @@ functions:
           authorizer:
             name: cognitoJwt
 
+  updateMyDisplayName:
+    handler: functions/members/updateDisplayName.handler
+    events:
+      - httpApi:
+          path: /me/displayName
+          method: patch
+          authorizer:
+            name: cognitoJwt
+
 resources:
   Resources:
     TripPlannerUserPool:

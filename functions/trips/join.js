@@ -1,7 +1,7 @@
-const { nanoid } = require('nanoid')
 const db = require('../../shared/db')
 const { extractUserId } = require('../../shared/auth')
 const { ok, err } = require('../../shared/response')
+const { notifyMembers } = require('../../shared/notify')
 
 exports.handler = async (event) => {
   let userId
@@ -49,24 +49,14 @@ exports.handler = async (event) => {
 
   await db.put(memberItem)
 
-  await Promise.all(
-    existingMembers.map((m) => {
-      const notifId = nanoid(10)
-      return db.put({
-        pk: `TRIP#${tripId}`,
-        sk: `NOTIFICATION#${notifId}`,
-        GSI2pk: `USER#${m.userId}`,
-        GSI2sk: `NOTIFICATION#${now}#${notifId}`,
-        tripId,
-        tripName: trip.name,
-        type: 'member_joined',
-        actorId: userId,
-        actorDisplayName: body.displayName || null,
-        createdAt: now,
-        read: false,
-      })
-    })
-  )
+  await notifyMembers({
+    tripId,
+    tripName: trip.name,
+    recipients: existingMembers.map((m) => m.userId),
+    type: 'member_joined',
+    actorId: userId,
+    actorDisplayName: body.displayName || null,
+  })
 
   return ok(200, { trip, member: memberItem })
 }

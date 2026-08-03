@@ -2,6 +2,7 @@ const { nanoid } = require('nanoid')
 const db = require('../../shared/db')
 const { extractUserId } = require('../../shared/auth')
 const { ok, err } = require('../../shared/response')
+const { notifyMembers } = require('../../shared/notify')
 
 exports.handler = async (event) => {
   let userId
@@ -13,6 +14,9 @@ exports.handler = async (event) => {
 
   const tripId = event.pathParameters?.tripId
   if (!tripId) return err(400, 'tripId is required')
+
+  const trip = await db.get(`TRIP#${tripId}`, 'META')
+  if (!trip) return err(404, 'Trip not found')
 
   const member = await db.get(`TRIP#${tripId}`, `MEMBER#${userId}`)
   if (!member) return err(403, 'Not a member of this trip')
@@ -43,6 +47,20 @@ exports.handler = async (event) => {
   }
 
   await db.put(suggestionItem)
+
+  const otherMembers = await db.query({
+    KeyConditionExpression: 'pk = :p AND begins_with(sk, :m)',
+    ExpressionAttributeValues: { ':p': `TRIP#${tripId}`, ':m': 'MEMBER#' },
+  })
+
+  await notifyMembers({
+    tripId,
+    tripName: trip.name,
+    recipients: otherMembers.filter((m) => m.userId !== userId).map((m) => m.userId),
+    type: 'suggestion_added',
+    actorId: userId,
+    actorDisplayName: member.displayName || null,
+  })
 
   return ok(201, { suggestion: suggestionItem })
 }

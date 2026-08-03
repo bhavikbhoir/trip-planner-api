@@ -3,6 +3,7 @@ const db = require('../../shared/db')
 const { extractUserId } = require('../../shared/auth')
 const { ok, err } = require('../../shared/response')
 const { getTripAggregate } = require('../../shared/tripAggregate')
+const { logUsageEvent } = require('../../shared/usageLog')
 
 exports.handler = async (event) => {
   let userId
@@ -58,6 +59,8 @@ exports.handler = async (event) => {
   }
 
   await db.put(expense)
+
+  logUsageEvent('expense_created', { tripId })
 
   return ok(201, { expense })
 }

@@ -2,6 +2,7 @@ const { nanoid } = require('nanoid')
 const db = require('../../shared/db')
 const { extractUserId } = require('../../shared/auth')
 const { ok, err } = require('../../shared/response')
+const { logUsageEvent } = require('../../shared/usageLog')
 
 exports.handler = async (event) => {
   let userId
@@ -61,6 +62,8 @@ exports.handler = async (event) => {
     { Put: { TableName: db.TABLE_NAME, Item: tripItem } },
     { Put: { TableName: db.TABLE_NAME, Item: memberItem } },
   ])
+
+  logUsageEvent('trip_created', { tripId, tripType: tripItem.tripType })
 
   return ok(201, { trip: tripItem })
 }

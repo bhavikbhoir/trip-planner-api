@@ -6,6 +6,7 @@ const { invokeClaude } = require('../../shared/bedrock')
 const { notifyMembers } = require('../../shared/notify')
 const { findLocationContexts } = require('../../shared/overpass')
 const { getLegOptions } = require('../../shared/osrm')
+const { logUsageEvent } = require('../../shared/usageLog')
 
 const ICON_ENUM = ['plane', 'hotel', 'car', 'food', 'activity', 'other']
 
@@ -353,6 +354,8 @@ exports.handler = async (event) => {
 
     await db.put(planItem)
 
+    logUsageEvent('plan_generated', { tripId, version, isRevision: !!latestPlan })
+
     // A fresh version resets what "approved" means for everyone but whoever
     // just triggered this — they're already looking at the result. Best-effort:
     // the plan itself is already saved above, so a notification failure here
@@ -387,3 +390,9 @@ exports.handler = async (event) => {
     await recordError(tripId, e.message || 'Unexpected error during generation')
   }
 }
+
+// Exported alongside the handler for eval/run.js — lets the eval harness
+// build the exact real prompt and call the exact real tool schema against
+// fixture trip data, without needing a real DynamoDB-backed trip to do it.
+exports.buildPrompt = buildPrompt
+exports.ITINERARY_TOOL = ITINERARY_TOOL

@@ -2,6 +2,7 @@ const db = require('../../shared/db')
 const { extractUserId } = require('../../shared/auth')
 const { ok, err } = require('../../shared/response')
 const { notifyMembers } = require('../../shared/notify')
+const { logUsageEvent } = require('../../shared/usageLog')
 
 exports.handler = async (event) => {
   let userId
@@ -48,6 +49,8 @@ exports.handler = async (event) => {
   }
 
   await db.put(memberItem)
+
+  logUsageEvent('member_joined', { tripId })
 
   await notifyMembers({
     tripId,

@@ -4,6 +4,7 @@ const { extractUserId } = require('../../shared/auth')
 const { ok, err } = require('../../shared/response')
 const { getTripAggregate } = require('../../shared/tripAggregate')
 const { invokeClaude } = require('../../shared/bedrock')
+const { logUsageEvent } = require('../../shared/usageLog')
 
 // Separate from full itinerary generation on purpose: cheap, fast, Haiku
 // calls the model was never actually wired up for anywhere in this codebase
@@ -148,6 +149,8 @@ exports.handler = async (event) => {
     })
 
   await Promise.all(newTips.map((t) => db.put(t)))
+
+  logUsageEvent('advisor_generate', { tripId, tipCount: newTips.length })
 
   return ok(200, { tips: newTips })
 }

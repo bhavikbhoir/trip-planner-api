@@ -29,9 +29,24 @@ provider:
         - Effect: Allow
           Action:
             - bedrock:InvokeModel
+          # Scoped to the two models actually called (shared/bedrock.js
+          # MODEL_IDS) instead of every foundation model in every region for
+          # any account — if MODEL_IDS changes, this list needs to change
+          # with it. Both models are invoked via "us."-prefixed cross-region
+          # inference profiles, which need permission on the profile
+          # resource itself *and* on the underlying foundation model in each
+          # region the profile may route to (us-east-1/us-east-2/us-west-2,
+          # per AWS's documented span for Claude's "us." profiles) — Bedrock
+          # checks both regardless of which region actually serves the call.
           Resource:
-            - "arn:aws:bedrock:*::foundation-model/*"
-            - "arn:aws:bedrock:*:*:inference-profile/*"
+            - !Sub 'arn:aws:bedrock:${AWS::Region}:${AWS::AccountId}:inference-profile/us.anthropic.claude-sonnet-4-6'
+            - !Sub 'arn:aws:bedrock:${AWS::Region}:${AWS::AccountId}:inference-profile/us.anthropic.claude-haiku-4-5-20251001-v1:0'
+            - 'arn:aws:bedrock:us-east-1::foundation-model/anthropic.claude-sonnet-4-6'
+            - 'arn:aws:bedrock:us-east-2::foundation-model/anthropic.claude-sonnet-4-6'
+            - 'arn:aws:bedrock:us-west-2::foundation-model/anthropic.claude-sonnet-4-6'
+            - 'arn:aws:bedrock:us-east-1::foundation-model/anthropic.claude-haiku-4-5-20251001-v1:0'
+            - 'arn:aws:bedrock:us-east-2::foundation-model/anthropic.claude-haiku-4-5-20251001-v1:0'
+            - 'arn:aws:bedrock:us-west-2::foundation-model/anthropic.claude-haiku-4-5-20251001-v1:0'
         - Effect: Allow
           Action:
             - secretsmanager:GetSecretValue

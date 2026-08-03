@@ -3,6 +3,7 @@ const db = require('../../shared/db')
 const { extractUserId } = require('../../shared/auth')
 const { ok, err } = require('../../shared/response')
 const { notifyMembers } = require('../../shared/notify')
+const { logUsageEvent } = require('../../shared/usageLog')
 
 exports.handler = async (event) => {
   let userId
@@ -47,6 +48,8 @@ exports.handler = async (event) => {
   }
 
   await db.put(suggestionItem)
+
+  logUsageEvent('suggestion_added', { tripId })
 
   const otherMembers = await db.query({
     KeyConditionExpression: 'pk = :p AND begins_with(sk, :m)',

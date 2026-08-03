@@ -228,9 +228,12 @@ functions:
     handler: functions/plan/generateWorker.handler
     # Raised alongside maxTokens (3000 -> 8000): worst-case generation speed
     # could otherwise approach or exceed 90s for a full 8000-token response.
+    # Raised again (180 -> 240) after adding sequential Overpass lookups
+    # (shared/overpass.js) — up to 5 locations, each observed taking as long
+    # as ~9s on the live public instance, adds a real ~50s worst case on top.
     # No API Gateway ceiling applies here (invoked async), so there's no
     # reason to be tight — Lambda supports up to 900s.
-    timeout: 180
+    timeout: 240
 
   markEventDone:
     handler: functions/events/markDone.handler

@@ -4,6 +4,7 @@ const { getTripAggregate } = require('../../shared/tripAggregate')
 const { getWeather } = require('../../shared/weather')
 const { invokeClaude } = require('../../shared/bedrock')
 const { notifyMembers } = require('../../shared/notify')
+const { findLocationContexts } = require('../../shared/overpass')
 
 const ICON_ENUM = ['plane', 'hotel', 'car', 'food', 'activity', 'other']
 
@@ -200,6 +201,49 @@ function assignEventIds(planBody) {
   return planBody
 }
 
+// Grounds the model's hedged hours/parking guesses in real OpenStreetMap
+// data where available. Lookups run sequentially (see shared/overpass.js —
+// the public instance appears to throttle concurrent connections from the
+// same client), and individual queries have been observed taking up to ~9s
+// on the live instance, so this is capped at 5 locations (~50s worst case)
+// to leave headroom in generateWorker's 180s budget alongside the Bedrock
+// call itself. Best effort throughout — a slow/unavailable Overpass instance
+// just means the model's own hedged note text (which already tells the user
+// to verify locally) stands unchanged, not a failed generation.
+const MAX_LOCATION_LOOKUPS = 5
+
+function collectLocatedEvents(planBody) {
+  const located = []
+  for (const day of planBody.days) {
+    for (const ev of day.events) {
+      if ((ev.icon === 'food' || ev.icon === 'activity') && ev.lat != null && ev.lng != null) {
+        located.push(ev)
+        if (located.length >= MAX_LOCATION_LOOKUPS) return located
+      }
+    }
+  }
+  return located
+}
+
+async function enrichWithLocationContext(planBody, hasDriver) {
+  try {
+    const located = collectLocatedEvents(planBody)
+    if (!located.length) return
+    const contexts = await findLocationContexts(located.map((ev) => ({ lat: ev.lat, lng: ev.lng })))
+    located.forEach((ev, i) => {
+      const ctx = contexts[i]
+      if (ctx.openingHours) {
+        ev.openingHours = `${ctx.openingHours.hours} — OpenStreetMap listing for "${ctx.openingHours.name}" nearby, verify it's the right venue`
+      }
+      if (hasDriver && ctx.parking) {
+        ev.nearbyParking = ctx.parking.name
+      }
+    })
+  } catch (e) {
+    console.warn('Location-context enrichment failed, continuing without it', e.message)
+  }
+}
+
 // Best-effort — records the failure onto the Trip META item so the frontend
 // can surface it via polling, since nothing is listening on an HTTP response
 // for this handler (it's invoked async by generate.js, not through API Gateway).
@@ -247,6 +291,8 @@ exports.handler = async (event) => {
       await recordError(tripId, `AI generation failed: ${e.message}`)
       return
     }
+
+    await enrichWithLocationContext(planBody, logistics.some((l) => l.transportMode === 'driving'))
 
     const version = plans.length + 1
     const planItem = {

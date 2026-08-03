@@ -5,6 +5,7 @@ const { getWeather } = require('../../shared/weather')
 const { invokeClaude } = require('../../shared/bedrock')
 const { notifyMembers } = require('../../shared/notify')
 const { findLocationContexts } = require('../../shared/overpass')
+const { getLegOptions } = require('../../shared/osrm')
 
 const ICON_ENUM = ['plane', 'hotel', 'car', 'food', 'activity', 'other']
 
@@ -37,6 +38,11 @@ const ITINERARY_TOOL = {
                   lng: { type: 'number', description: 'Optional — omit if the event has no single meaningful location' },
                   costPerPerson: { type: 'number', description: 'Optional — whole-number USD estimate, omit if no inherent per-person cost' },
                   timeToSpend: { type: 'string', description: 'Optional — e.g. "1-1.5 hrs", omit for quick logistics events' },
+                  transitEstimate: {
+                    type: 'string',
+                    description:
+                      'Optional. ONLY include if public transit is a genuinely plausible way to reach this stop from the previous one (a real subway/bus/train system you know exists at this destination). Must read as an estimate, not a fact — e.g. "Bus ~15-20 min, verify route/schedule locally" — never a specific line number or timetable you are not certain of. Omit entirely rather than guessing for destinations without known transit.',
+                  },
                 },
                 required: ['time', 'title', 'icon'],
               },
@@ -175,7 +181,7 @@ TASK: ${
     latestPlan
       ? `Revise the CURRENT ITINERARY above to incorporate the group feedback and any preference/logistics changes reflected elsewhere in this prompt. Keep what's already working — do not regenerate the whole trip from scratch or restructure days that aren't affected by the feedback, unless a hard anchor (arrival/departure/booking) genuinely requires it.`
       : `Produce a day-by-day itinerary from ${trip.startDate} to ${trip.endDate}.`
-  } Respect every anchor above, reflect the aggregated preferences (including companion ages), and incorporate the group feedback above where reasonable. When an event involves a specific traveler (e.g. an arrival/departure), refer to them by the actual name given above (e.g. "Shrija arrives") — never invent generic labels like "Traveler 1" or "Traveler 3 (trip owner)". For each event, include your best-effort approximate "lat"/"lng" decimal coordinates for a rough map view (these are estimates for a casual map pin, not authoritative geocoding) — omit both if the event has no single meaningful location (e.g. a travel/arrival event, or a free/rest block). For any event with a real per-person cost (museum/attraction tickets, restaurant meals, tours, etc.), include your best-effort approximate "costPerPerson" as a whole-number USD estimate (e.g. a $25 ticket, a $18 meal) so the group can judge affordability at a glance — omit it for events with no inherent per-person cost (arrivals, free activities, rest blocks, transit). Include a "timeToSpend" duration estimate (e.g. "1–1.5 hrs") on events where that's meaningful (activities, meals, attractions) — omit it for quick logistics events (arrivals, short transit hops). For any car-based travel segment (a driving member's logistics, or a long drive between stops) and generally across a full day, build in natural rest/coffee/freshen-up breaks every couple of hours rather than scheduling back-to-back activities with no downtime — insert these as their own short events when they're a real planning consideration, not on every single transition. Where genuinely useful, weave extra practical guidance into an event's "note" — expected wait times (e.g. a popular restaurant at peak hours), the best time/spot for photos, or typical opening/closing hours — but only where it adds real value, not as boilerplate on every event, and phrase hours/wait-time claims as general guidance to verify locally rather than as confirmed facts. If you ever suggest a movie/cinema activity, do not invent a specific showtime as if it's confirmed — note that showtimes should be checked directly with the venue, since this planner has no access to real showtime data.
+  } Respect every anchor above, reflect the aggregated preferences (including companion ages), and incorporate the group feedback above where reasonable. When an event involves a specific traveler (e.g. an arrival/departure), refer to them by the actual name given above (e.g. "Shrija arrives") — never invent generic labels like "Traveler 1" or "Traveler 3 (trip owner)". For each event, include your best-effort approximate "lat"/"lng" decimal coordinates for a rough map view (these are estimates for a casual map pin, not authoritative geocoding) — omit both if the event has no single meaningful location (e.g. a travel/arrival event, or a free/rest block). For any event with a real per-person cost (museum/attraction tickets, restaurant meals, tours, etc.), include your best-effort approximate "costPerPerson" as a whole-number USD estimate (e.g. a $25 ticket, a $18 meal) so the group can judge affordability at a glance — omit it for events with no inherent per-person cost (arrivals, free activities, rest blocks, transit). Include a "timeToSpend" duration estimate (e.g. "1–1.5 hrs") on events where that's meaningful (activities, meals, attractions) — omit it for quick logistics events (arrivals, short transit hops). For any car-based travel segment (a driving member's logistics, or a long drive between stops) and generally across a full day, build in natural rest/coffee/freshen-up breaks every couple of hours rather than scheduling back-to-back activities with no downtime — insert these as their own short events when they're a real planning consideration, not on every single transition. Where genuinely useful, weave extra practical guidance into an event's "note" — expected wait times (e.g. a popular restaurant at peak hours), the best time/spot for photos, or typical opening/closing hours — but only where it adds real value, not as boilerplate on every event, and phrase hours/wait-time claims as general guidance to verify locally rather than as confirmed facts. Real walking-estimate and driving-route distances between consecutive stops are computed separately and shown alongside your plan — you don't need to estimate those yourself. Only use "transitEstimate" when public transit is a genuinely plausible way to cover that specific gap at this destination (a system you're confident actually exists there), and always phrase it as something to verify, never as a confirmed schedule. If you ever suggest a movie/cinema activity, do not invent a specific showtime as if it's confirmed — note that showtimes should be checked directly with the venue, since this planner has no access to real showtime data.
 
 Call the propose_itinerary tool with the full itinerary — do not respond with plain text.`
 }
@@ -244,6 +250,45 @@ async function enrichWithLocationContext(planBody, hasDriver) {
   }
 }
 
+// Real driving routes + straight-line walking estimates between consecutive
+// located stops (shared/osrm.js) — the model is told in the prompt not to
+// bother estimating these itself. Capped at 6 legs; unlike the Overpass
+// phase above, OSRM's public instance was verified to handle a handful of
+// concurrent requests fine, so this runs with limited parallelism rather
+// than strictly sequentially.
+const MAX_TRAVEL_LEGS = 6
+const TRAVEL_LEG_CONCURRENCY = 3
+
+function collectTravelLegs(planBody) {
+  const legs = []
+  for (const day of planBody.days) {
+    const located = day.events.filter((ev) => ev.lat != null && ev.lng != null)
+    for (let i = 1; i < located.length; i++) {
+      legs.push({ from: located[i - 1], to: located[i] })
+      if (legs.length >= MAX_TRAVEL_LEGS) return legs
+    }
+  }
+  return legs
+}
+
+async function enrichWithTravelLegs(planBody) {
+  try {
+    const legs = collectTravelLegs(planBody)
+    if (!legs.length) return
+    let next = 0
+    async function worker() {
+      while (next < legs.length) {
+        const leg = legs[next++]
+        const options = await getLegOptions(leg.from.lat, leg.from.lng, leg.to.lat, leg.to.lng)
+        leg.to.travelFromPrevious = options
+      }
+    }
+    await Promise.all(Array.from({ length: Math.min(TRAVEL_LEG_CONCURRENCY, legs.length) }, worker))
+  } catch (e) {
+    console.warn('Travel-leg enrichment failed, continuing without it', e.message)
+  }
+}
+
 // Best-effort — records the failure onto the Trip META item so the frontend
 // can surface it via polling, since nothing is listening on an HTTP response
 // for this handler (it's invoked async by generate.js, not through API Gateway).
@@ -293,6 +338,7 @@ exports.handler = async (event) => {
     }
 
     await enrichWithLocationContext(planBody, logistics.some((l) => l.transportMode === 'driving'))
+    await enrichWithTravelLegs(planBody)
 
     const version = plans.length + 1
     const planItem = {

@@ -380,9 +380,19 @@ resources:
 
     TripPlannerTable:
       Type: AWS::DynamoDB::Table
+      # DeletionProtectionEnabled means `serverless remove` will fail against
+      # this table until it's manually turned off first — that's the point:
+      # previously a typo'd stack removal would have destroyed every trip
+      # permanently with no recovery path. PITR (continuous backups, ~cents/mo
+      # at this data volume) covers the "bad write/bug corrupts data" case
+      # deletion protection doesn't.
+      DeletionPolicy: Retain
       Properties:
         TableName: trip-planner-${self:provider.stage}
         BillingMode: PAY_PER_REQUEST
+        DeletionProtectionEnabled: true
+        PointInTimeRecoverySpecification:
+          PointInTimeRecoveryEnabled: true
         AttributeDefinitions:
           - AttributeName: pk
             AttributeType: S
@@ -418,6 +428,50 @@ resources:
                 KeyType: RANGE
             Projection:
               ProjectionType: ALL
+
+    # Previously nothing watched generateWorker at all — a systemic failure
+    # (Bedrock quota exhausted, a bad deploy) would only ever surface as a
+    # quiet lastGenerationError on whichever trip happened to hit it, with
+    # nobody actually told. This alarms on any Errors in a 5-minute window.
+    # FunctionName is built as a plain string (matching the naming convention
+    # used elsewhere in this file), not !GetAtt/!Ref to the function resource —
+    # this file already hit a circular-dependency deploy failure once from
+    # referencing a Lambda's own logical resource from a statement attached
+    # to it; this sidesteps that class of bug entirely.
+    AlertTopic:
+      Type: AWS::SNS::Topic
+      Properties:
+        TopicName: trip-planner-${self:provider.stage}-alerts
+
+    # User-confirmed destination (asked directly, not inferred from context).
+    # Note: SNS email subscriptions require manual confirmation — AWS will
+    # send a "Subscription Confirmation" email after deploy that has to be
+    # clicked once before alerts actually deliver.
+    AlertTopicSubscription:
+      Type: AWS::SNS::Subscription
+      Properties:
+        TopicArn: !Ref AlertTopic
+        Protocol: email
+        Endpoint: bhvkbhoir95@gmail.com
+
+    GenerateWorkerErrorAlarm:
+      Type: AWS::CloudWatch::Alarm
+      Properties:
+        AlarmName: trip-planner-${self:provider.stage}-generateWorker-errors
+        AlarmDescription: Itinerary generation is failing — check CloudWatch Logs for generateWorker.
+        Namespace: AWS/Lambda
+        MetricName: Errors
+        Dimensions:
+          - Name: FunctionName
+            Value: trip-planner-api-${self:provider.stage}-generateWorker
+        Statistic: Sum
+        Period: 300
+        EvaluationPeriods: 1
+        Threshold: 1
+        ComparisonOperator: GreaterThanOrEqualToThreshold
+        TreatMissingData: notBreaching
+        AlarmActions:
+          - !Ref AlertTopic
 
   Outputs:
     UserPoolId:

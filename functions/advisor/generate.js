@@ -12,6 +12,7 @@ const { logUsageEvent } = require('../../shared/usageLog')
 // generation's async trigger+worker split) — Haiku on a short tip list
 // comfortably finishes well inside API Gateway's 29s ceiling.
 const CATEGORIES = ['hotel_area', 'arrival_gap', 'departure_timing', 'coverage_gap']
+const GENERATE_COOLDOWN_MS = 30 * 1000
 
 const TIPS_TOOL = {
   name: 'propose_tips',
@@ -110,6 +111,25 @@ exports.handler = async (event) => {
 
   const isMember = members.some((m) => m.userId === userId)
   if (!isMember) return err(403, 'Not a member of this trip')
+
+  // Same cooldown mechanics as plan/generate.js, separate field — this calls
+  // Bedrock too and had no rate limit at all until this was flagged in a
+  // production-readiness review. Atomic conditional write closes the same
+  // race window a naive get-then-check-then-put would leave open.
+  const now = new Date()
+  const cutoff = new Date(now.getTime() - GENERATE_COOLDOWN_MS).toISOString()
+  try {
+    await db.updateIf(`TRIP#${tripId}`, 'META', {
+      UpdateExpression: 'SET lastAdvisorGeneratedAt = :now',
+      ConditionExpression: 'attribute_not_exists(lastAdvisorGeneratedAt) OR lastAdvisorGeneratedAt < :cutoff',
+      ExpressionAttributeValues: { ':now': now.toISOString(), ':cutoff': cutoff },
+    })
+  } catch (e) {
+    if (e.name === 'ConditionalCheckFailedException') {
+      return err(429, 'Please wait a few seconds before asking for new tips.')
+    }
+    throw e
+  }
 
   const latestPlan = plans.length ? plans.reduce((a, b) => (b.version > a.version ? b : a)) : null
   const prompt = buildPrompt({ trip, members, logistics, bookings, latestPlan })

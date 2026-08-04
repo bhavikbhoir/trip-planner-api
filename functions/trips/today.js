@@ -24,6 +24,9 @@ function timeToMinutes(time) {
   return hour * 60 + parseInt(match[2], 10)
 }
 
+exports.bookingCoversDate = bookingCoversDate
+exports.timeToMinutes = timeToMinutes
+
 exports.handler = async (event) => {
   let userId
   try {

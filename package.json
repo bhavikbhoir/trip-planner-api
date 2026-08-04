@@ -11,7 +11,8 @@
     "deploy:dev": "serverless deploy --stage dev",
     "deploy:prod": "serverless deploy --stage prod",
     "eval": "node eval/run.js",
-    "eval:live": "node eval/run.js --live"
+    "eval:live": "node eval/run.js --live",
+    "test": "node --test"
   },
   "dependencies": {
     "@aws-sdk/client-bedrock-runtime": "^3.750.0",

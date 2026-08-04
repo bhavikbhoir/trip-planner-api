@@ -21,10 +21,18 @@ jobs:
         with:
           node-version: '20'
       - run: npm install
+      - name: Syntax-check every function
+        run: find functions shared eval -name '*.js' -exec node -c {} \;
+      - name: Unit tests
+        run: npm run test
+      - name: Run eval harness (dry run — no Bedrock calls, no cost)
+        run: npm run eval
       - uses: aws-actions/configure-aws-credentials@v4
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: us-east-1
+      - name: Verify the CloudFormation template compiles
+        run: npx serverless package --stage ${{ github.event.inputs.stage || 'dev' }}
       - name: Deploy
         run: npx serverless deploy --stage ${{ github.event.inputs.stage || 'dev' }}

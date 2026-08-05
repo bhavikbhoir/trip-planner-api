@@ -349,6 +349,24 @@ functions:
           authorizer:
             name: cognitoJwt
 
+  getMe:
+    handler: functions/me/get.handler
+    events:
+      - httpApi:
+          path: /me
+          method: get
+          authorizer:
+            name: cognitoJwt
+
+  updateMyTheme:
+    handler: functions/me/updateTheme.handler
+    events:
+      - httpApi:
+          path: /me/theme
+          method: patch
+          authorizer:
+            name: cognitoJwt
+
 resources:
   Resources:
     TripPlannerUserPool:

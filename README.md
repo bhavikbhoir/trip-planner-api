@@ -92,6 +92,8 @@ All behind the Cognito JWT authorizer (`Authorization: Bearer <access token>`) u
 | DELETE | `/trips/{tripId}/members/me` | leave a trip (owners must delete the trip instead) |
 | PUT | `/trips/{tripId}/logistics/me` | set the caller's arrival/departure + transport mode |
 | PATCH | `/me/displayName` | update display name across every trip the caller already belongs to (Cognito's own `name` attribute is updated client-side; this syncs the cached copy on each `MEMBER#` item) |
+| GET | `/me` | account-level preferences — currently just `{ theme }` |
+| PATCH | `/me/theme` | set the caller's saved theme (`light`/`dark`), synced across devices |
 
 **Bookings & expenses**
 | Method | Path | Purpose |
@@ -145,6 +147,12 @@ notifications feed.
 | Advisor tip | `TRIP#<tripId>` | `TIP#<tipId>` |
 | Event completion | `TRIP#<tripId>` | `DONE#<eventId>` |
 | Notification | `TRIP#<tripId>` | `NOTIFICATION#<notificationId>` |
+| User profile | `USER#<userId>` | `PROFILE` |
+
+The user profile item is the one account-level (not trip-scoped) item in the
+table — currently just holds `theme`. `displayName` intentionally isn't here;
+it's cached per-`MEMBER#` item instead (see `PATCH /me/displayName` above),
+which predates this item and wasn't worth migrating just to centralize it.
 
 Member items also carry `GSI1pk=USER#<userId>`, `GSI1sk=TRIP#<tripId>`, plus
 `preferences` (food/activities/budgetPace/groupDynamics/dislikes/mustDo) and

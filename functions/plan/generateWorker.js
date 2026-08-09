@@ -104,6 +104,7 @@ function buildPrompt({ trip, members, logistics, bookings, weather, suggestions,
       return [
         `- ${nameFor(m.userId)}${m.role === 'owner' ? ' (trip owner)' : ''}:`,
         p.food?.length ? `  food: ${p.food.join(', ')}` : null,
+        p.cuisines?.length ? `  cuisines craving: ${p.cuisines.join(', ')}` : null,
         p.activities?.length ? `  activities: ${p.activities.join(', ')}` : null,
         p.budgetPace?.length ? `  budget/pace: ${p.budgetPace.join(', ')}` : null,
         p.groupDynamics?.length ? `  group dynamics: ${p.groupDynamics.join(', ')}` : null,

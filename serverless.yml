@@ -169,6 +169,15 @@ functions:
           authorizer:
             name: cognitoJwt
 
+  updateBooking:
+    handler: functions/bookings/update.handler
+    events:
+      - httpApi:
+          path: /trips/{tripId}/bookings/{bookingId}
+          method: put
+          authorizer:
+            name: cognitoJwt
+
   removeBooking:
     handler: functions/bookings/remove.handler
     events:

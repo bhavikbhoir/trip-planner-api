@@ -99,6 +99,7 @@ All behind the Cognito JWT authorizer (`Authorization: Bearer <access token>`) u
 | Method | Path | Purpose |
 |--------|------|---------|
 | POST | `/trips/{tripId}/bookings` | add a manual booking (hotel/car/other) |
+| PUT | `/trips/{tripId}/bookings/{bookingId}` | edit a booking (any member) |
 | DELETE | `/trips/{tripId}/bookings/{bookingId}` | remove a booking |
 | POST | `/trips/{tripId}/expenses` | log an expense, split across chosen members (defaults to everyone) |
 | DELETE | `/trips/{tripId}/expenses/{expenseId}` | remove an expense |

@@ -110,6 +110,8 @@ All behind the Cognito JWT authorizer (`Authorization: Bearer <access token>`) u
 | GET | `/trips/{tripId}/weather` | current conditions for the destination |
 | PUT | `/trips/{tripId}/events/{eventId}/done` | mark an itinerary event done (day-of view) |
 | DELETE | `/trips/{tripId}/events/{eventId}/done` | unmark it |
+| PUT | `/trips/{tripId}/events/{eventId}/pick` | choose a restaurant alternative for a meal event — body `{ chosenIndex, planVersion }`, index into `[default, ...alternatives]` |
+| DELETE | `/trips/{tripId}/events/{eventId}/pick` | revert the meal to the AI's original pick |
 
 **Collaboration**
 | Method | Path | Purpose |
@@ -146,6 +148,7 @@ notifications feed.
 | Approval | `TRIP#<tripId>` | `APPROVAL#<userId>#<planVersion>` |
 | Advisor tip | `TRIP#<tripId>` | `TIP#<tipId>` |
 | Event completion | `TRIP#<tripId>` | `DONE#<eventId>` |
+| Meal pick | `TRIP#<tripId>` | `PICK#<eventId>` |
 | Notification | `TRIP#<tripId>` | `NOTIFICATION#<notificationId>` |
 | User profile | `USER#<userId>` | `PROFILE` |
 
@@ -159,12 +162,18 @@ Member items also carry `GSI1pk=USER#<userId>`, `GSI1sk=TRIP#<tripId>`, plus
 `companions: [{ name, age }]` for +1s who aren't app users (kids, partners,
 parents) — surfaced to the AI for pacing/suggestion context.
 
-Plan events carry a server-assigned `eventId` (stable across regenerations),
-plus optional `openingHours`/`nearbyParking` (real OpenStreetMap data,
+Plan events carry a server-assigned `eventId` (freshly minted per generation
+by `assignEventIds`, so a regeneration's events are all new ids), plus
+optional `openingHours`/`nearbyParking` (real OpenStreetMap data,
 `shared/overpass.js`), `travelFromPrevious` (real OSRM driving route + a
 labeled straight-line walking estimate, `shared/osrm.js`), and
 `transitEstimate` (AI-generated, only when plausible, always phrased as an
-estimate to verify).
+estimate to verify). Restaurant/meal events (icon `food`) also carry an
+`alternatives` array — 1-2 swappable venues the group can pick between
+(`PICK#<eventId>` records the choice). Because picks are keyed on `eventId`
+and tagged with `planVersion`, and regeneration mints new ids + bumps the
+version, an old pick simply never matches the new plan — meal picks start
+clean on each regeneration with no cleanup job.
 
 ## Reliability & cost guardrails
 

@@ -115,6 +115,15 @@ functions:
           authorizer:
             name: cognitoJwt
 
+  updateTrip:
+    handler: functions/trips/update.handler
+    events:
+      - httpApi:
+          path: /trips/{tripId}
+          method: put
+          authorizer:
+            name: cognitoJwt
+
   getTripToday:
     handler: functions/trips/today.handler
     events:

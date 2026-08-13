@@ -339,14 +339,21 @@ exports.handler = async (event) => {
     let planBody
     try {
       // 3000 was too low for a real multi-day itinerary once event notes grew
-      // detailed — Bedrock would hit the cap mid-string. 8000 stays under
-      // Sonnet's 8192 output ceiling with real headroom. Forcing the
-      // response through ITINERARY_TOOL means a truncated response now
-      // fails as an incomplete tool call rather than unparseable text.
+      // detailed; 8000 was next, and a real 5-day/40-event trip hit that cap
+      // in production (2026-08-13, "Arizona" trip) once meal events started
+      // also carrying structured `alternatives` — each one adds a real chunk
+      // of output per food event. The old "8000 stays under Sonnet's 8192
+      // ceiling" comment was wrong: Claude 4.x supports far more than 8192
+      // output tokens; 8000 was an inherited assumption from an older model
+      // generation, not a real Bedrock limit. 16000 gives multi-day trips
+      // with alternatives real headroom. Forcing the response through
+      // ITINERARY_TOOL means a truncated response fails as an incomplete
+      // tool call rather than unparseable text — see invokeClaude's explicit
+      // stop_reason check for what happens if 16000 isn't enough either.
       const toolInput = await invokeClaude({
         prompt,
         model: 'sonnet',
-        maxTokens: 8000,
+        maxTokens: 16000,
         tools: [ITINERARY_TOOL],
         toolChoice: { type: 'tool', name: 'propose_itinerary' },
       })

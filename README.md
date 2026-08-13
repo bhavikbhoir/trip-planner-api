@@ -79,6 +79,7 @@ All behind the Cognito JWT authorizer (`Authorization: Bearer <access token>`) u
 | POST | `/trips` | create a trip |
 | GET | `/trips` | list the caller's trips |
 | GET | `/trips/{tripId}` | get one trip + members + logistics + bookings + plans + suggestions + approvals + expenses + tips |
+| PUT | `/trips/{tripId}` | owner-only — edit name/destination/dates/tripType |
 | GET | `/trips/{tripId}/preview` | membership-optional trip preview (name/destination/member count) for the join-invite flow |
 | GET | `/trips/{tripId}/today` | today's events + active bookings, for the day-of view |
 | POST | `/trips/{tripId}/join` | join an existing trip |

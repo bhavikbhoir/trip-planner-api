@@ -38,6 +38,15 @@ async function invokeClaude({ prompt, model = 'sonnet', maxTokens = 500, tools, 
     if (!toolUse) {
       throw new Error(`Model did not return the expected tool call (stop_reason: ${body.stop_reason || 'unknown'})`)
     }
+    // A tool_use block can still be present but incomplete — Bedrock hit
+    // max_tokens mid-JSON, so `input` is whatever was parseable of a
+    // truncated object (often missing required fields entirely). Without
+    // this check that surfaces deep inside the caller as something like
+    // "Tool call missing 'days' array" — technically true, but it hides the
+    // real cause (the response was cut off, not malformed).
+    if (body.stop_reason === 'max_tokens') {
+      throw new Error(`Response truncated at max_tokens (${maxTokens}) — the request needs a higher token budget`)
+    }
     return toolUse.input
   }
 

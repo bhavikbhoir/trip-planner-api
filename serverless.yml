@@ -340,6 +340,69 @@ functions:
           authorizer:
             name: cognitoJwt
 
+  completeTrip:
+    handler: functions/trips/complete.handler
+    events:
+      - httpApi:
+          path: /trips/{tripId}/complete
+          method: post
+          authorizer:
+            name: cognitoJwt
+
+  uncompleteTrip:
+    handler: functions/trips/uncomplete.handler
+    events:
+      - httpApi:
+          path: /trips/{tripId}/complete
+          method: delete
+          authorizer:
+            name: cognitoJwt
+
+  skipEvent:
+    handler: functions/events/skip.handler
+    events:
+      - httpApi:
+          path: /trips/{tripId}/events/{eventId}/skip
+          method: put
+          authorizer:
+            name: cognitoJwt
+
+  unskipEvent:
+    handler: functions/events/unskip.handler
+    events:
+      - httpApi:
+          path: /trips/{tripId}/events/{eventId}/skip
+          method: delete
+          authorizer:
+            name: cognitoJwt
+
+  swapEvent:
+    handler: functions/events/swap.handler
+    events:
+      - httpApi:
+          path: /trips/{tripId}/events/{eventId}/swap
+          method: put
+          authorizer:
+            name: cognitoJwt
+
+  unswapEvent:
+    handler: functions/events/unswap.handler
+    events:
+      - httpApi:
+          path: /trips/{tripId}/events/{eventId}/swap
+          method: delete
+          authorizer:
+            name: cognitoJwt
+
+  upsertMyFeedback:
+    handler: functions/feedback/upsert.handler
+    events:
+      - httpApi:
+          path: /trips/{tripId}/feedback/me
+          method: put
+          authorizer:
+            name: cognitoJwt
+
   leaveTrip:
     handler: functions/members/leave.handler
     events:

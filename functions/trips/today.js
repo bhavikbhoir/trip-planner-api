@@ -38,7 +38,7 @@ exports.handler = async (event) => {
   const tripId = event.pathParameters?.tripId
   if (!tripId) return err(400, 'tripId is required')
 
-  const { trip, members, bookings, plans, eventCompletions } = await getTripAggregate(tripId)
+  const { trip, members, bookings, plans, eventCompletions, eventSkips, eventSwaps } = await getTripAggregate(tripId)
   if (!trip) return err(404, 'Trip not found')
 
   const isMember = members.some((m) => m.userId === userId)
@@ -50,18 +50,29 @@ exports.handler = async (event) => {
   const date = event.queryStringParameters?.date || new Date().toISOString().slice(0, 10)
 
   const doneEventIds = new Set((eventCompletions || []).map((c) => c.eventId))
+  const skippedByEventId = new Map((eventSkips || []).map((s) => [s.eventId, s]))
+  const swappedByEventId = new Map((eventSwaps || []).map((s) => [s.eventId, s]))
   const latestPlan = plans.length ? plans.reduce((a, b) => (b.version > a.version ? b : a)) : null
   const day = latestPlan?.days?.find((d) => d.date === date) || null
   const events = (day?.events || [])
     .slice()
     .sort((a, b) => timeToMinutes(a.time) - timeToMinutes(b.time))
-    .map((ev) => ({ ...ev, done: doneEventIds.has(ev.eventId) }))
+    .map((ev) => {
+      const skip = skippedByEventId.get(ev.eventId)
+      const swap = swappedByEventId.get(ev.eventId)
+      const status = doneEventIds.has(ev.eventId) ? 'done' : skip ? 'skipped' : swap ? 'swapped' : null
+      // statusNote is the user's own annotation on a skip/swap — kept
+      // separate from `note`, which is the AI-authored planning guidance
+      // already on the event, so setting one never clobbers the other.
+      return { ...ev, done: status === 'done', status, statusNote: skip?.note || swap?.note || null }
+    })
 
   const activeBookings = bookings.filter((b) => bookingCoversDate(b, date))
 
   return ok(200, {
     date,
     tripStatus: trip.status,
+    tripCompletedAt: trip.completedAt || null,
     planVersion: latestPlan?.version || null,
     events,
     bookings: activeBookings,

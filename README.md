@@ -78,12 +78,14 @@ All behind the Cognito JWT authorizer (`Authorization: Bearer <access token>`) u
 |--------|------|---------|
 | POST | `/trips` | create a trip |
 | GET | `/trips` | list the caller's trips |
-| GET | `/trips/{tripId}` | get one trip + members + logistics + bookings + plans + suggestions + approvals + expenses + tips |
+| GET | `/trips/{tripId}` | get one trip + members + logistics + bookings + plans + suggestions + approvals + event completions/skips/swaps + picks + expenses + tips + feedback |
 | PUT | `/trips/{tripId}` | owner-only — edit name/destination/dates/tripType |
 | GET | `/trips/{tripId}/preview` | membership-optional trip preview (name/destination/member count) for the join-invite flow |
-| GET | `/trips/{tripId}/today` | today's events + active bookings, for the day-of view |
+| GET | `/trips/{tripId}/today` | today's events (with done/skipped/swapped status + note) + active bookings, for the day-of view |
 | POST | `/trips/{tripId}/join` | join an existing trip |
 | POST | `/trips/{tripId}/finalize` | owner-only (or all-approved) — lock in the current plan |
+| POST | `/trips/{tripId}/complete` | any member — mark the trip complete (sets `completedAt`), no approval gate |
+| DELETE | `/trips/{tripId}/complete` | any member — reopen a completed trip (clears `completedAt`) |
 | DELETE | `/trips/{tripId}` | owner-only — cascading delete of the entire trip aggregate |
 
 **Membership & logistics**
@@ -110,8 +112,12 @@ All behind the Cognito JWT authorizer (`Authorization: Bearer <access token>`) u
 |--------|------|---------|
 | POST | `/trips/{tripId}/plan/generate` | trigger AI generation (async — 202, poll `GET /trips/{tripId}` for the new plan version); 30s cooldown |
 | GET | `/trips/{tripId}/weather` | current conditions for the destination |
-| PUT | `/trips/{tripId}/events/{eventId}/done` | mark an itinerary event done (day-of view) |
+| PUT | `/trips/{tripId}/events/{eventId}/done` | mark an itinerary event done (day-of view); clears any skip/swap on the same event |
 | DELETE | `/trips/{tripId}/events/{eventId}/done` | unmark it |
+| PUT | `/trips/{tripId}/events/{eventId}/skip` | mark an event skipped — body `{ note? }`; clears any done/swap on the same event |
+| DELETE | `/trips/{tripId}/events/{eventId}/skip` | clear the skip |
+| PUT | `/trips/{tripId}/events/{eventId}/swap` | mark that the group did something else instead — body `{ note? }`; clears any done/skip on the same event |
+| DELETE | `/trips/{tripId}/events/{eventId}/swap` | clear the swap |
 | PUT | `/trips/{tripId}/events/{eventId}/pick` | choose a restaurant alternative for a meal event — body `{ chosenIndex, planVersion }`, index into `[default, ...alternatives]` |
 | DELETE | `/trips/{tripId}/events/{eventId}/pick` | revert the meal to the AI's original pick |
 
@@ -123,6 +129,11 @@ All behind the Cognito JWT authorizer (`Authorization: Bearer <access token>`) u
 | PUT | `/trips/{tripId}/approvals/me` | approve a plan version |
 | POST | `/trips/{tripId}/advisor/generate` | generate Haiku-powered contextual tips (hotel fit, arrival gaps, tight departures, coverage gaps); 30s cooldown |
 | DELETE | `/trips/{tripId}/advisor/{tipId}` | dismiss a tip |
+
+**Post-trip**
+| Method | Path | Purpose |
+|--------|------|---------|
+| PUT | `/trips/{tripId}/feedback/me` | submit/overwrite the caller's own post-trip feedback — body `{ mood, comment? }`, `mood` one of `loved_it`/`good`/`mixed`/`rough` |
 
 **Notifications**
 | Method | Path | Purpose |
@@ -150,9 +161,29 @@ notifications feed.
 | Approval | `TRIP#<tripId>` | `APPROVAL#<userId>#<planVersion>` |
 | Advisor tip | `TRIP#<tripId>` | `TIP#<tipId>` |
 | Event completion | `TRIP#<tripId>` | `DONE#<eventId>` |
+| Event skip | `TRIP#<tripId>` | `SKIPPED#<eventId>` |
+| Event swap | `TRIP#<tripId>` | `SWAPPED#<eventId>` |
 | Meal pick | `TRIP#<tripId>` | `PICK#<eventId>` |
+| Post-trip feedback | `TRIP#<tripId>` | `FEEDBACK#<userId>` |
 | Notification | `TRIP#<tripId>` | `NOTIFICATION#<notificationId>` |
 | User profile | `USER#<userId>` | `PROFILE` |
+
+An event is at most one of done/skipped/swapped at a time — existence-based,
+like everything else in this table, and kept mutually exclusive via a single
+`transactWrite` per status change (`functions/events/{markDone,skip,swap}.js`)
+rather than a separate status field that could drift out of sync with which
+item(s) actually exist.
+
+The Trip item also gets an explicit, persisted `completedAt` (+`completedBy`)
+once a member marks the trip complete via `POST /trips/{tripId}/complete` —
+deliberately separate from `status` (`planning`/`finalized`, whether the
+*plan* is locked): a trip's real-world completion and its plan's lock state
+are independent facts, so a trip can be e.g. "planning + completed" (dates
+passed without ever finalizing) just as validly as "finalized + completed."
+Trip phase (upcoming/in-progress/completed) is otherwise derived client-side
+from dates, never stored — `completedAt` is the one explicit override, so a
+trip can be closed early or reopened without recap numbers silently shifting
+as today's date moves.
 
 The user profile item is the one account-level (not trip-scoped) item in the
 table — currently just holds `theme`. `displayName` intentionally isn't here;
@@ -212,8 +243,10 @@ Full collaborative loop is live: trip creation, preferences/companions,
 logistics, manual bookings, AI itinerary generation (forced tool-use output,
 grounded in real OpenStreetMap opening-hours/parking and real OSRM driving
 routes), suggestions/approvals/finalize, a day-of view with per-event
-completion tracking, expense tracking with debt-simplified settle-up,
-Haiku-powered advisor tips, and notifications. A starter unit test suite
-covers the pure logic modules; most of the codebase is still Lambda handlers
-exercised only by the eval harness and manual testing — broader handler-level
-test coverage is the next real gap.
+done/skipped/swapped status tracking (with optional notes), expense tracking
+with debt-simplified settle-up, Haiku-powered advisor tips, notifications,
+and a post-trip lifecycle (mark complete/reopen, a recap of what actually
+happened vs. what was planned, per-member mood feedback). A starter unit test
+suite covers the pure logic modules; most of the codebase is still Lambda
+handlers exercised only by the eval harness and manual testing — broader
+handler-level test coverage is the next real gap.

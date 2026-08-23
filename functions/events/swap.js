@@ -2,9 +2,9 @@ const db = require('../../shared/db')
 const { extractUserId } = require('../../shared/auth')
 const { ok, err } = require('../../shared/response')
 
-// Completion is existence-based, same as approvals — a DONE#<eventId> item
-// present means done, absent means not. No separate boolean field to drift
-// out of sync with the item's own existence.
+// "Swapped" = the group did something different instead of the suggested
+// event — note is where "what did we do different" (the user's own framing)
+// actually gets captured, surfaced later on the trip recap.
 exports.handler = async (event) => {
   let userId
   try {
@@ -20,25 +20,22 @@ exports.handler = async (event) => {
   const member = await db.get(`TRIP#${tripId}`, `MEMBER#${userId}`)
   if (!member) return err(403, 'Not a member of this trip')
 
-  const pk = `TRIP#${tripId}`
-  const item = {
-    pk,
-    sk: `DONE#${eventId}`,
-    tripId,
-    eventId,
-    doneBy: userId,
-    doneAt: new Date().toISOString(),
+  let note
+  try {
+    const body = event.body ? JSON.parse(event.body) : {}
+    note = typeof body.note === 'string' ? body.note.trim().slice(0, 500) || undefined : undefined
+  } catch {
+    return err(400, 'Invalid JSON body')
   }
 
-  // Done/Skipped/Swapped are mutually exclusive per event — clear the other
-  // two status items in the same atomic transaction so an event can never
-  // transiently (or permanently, on a partial failure) count as more than
-  // one of them.
+  const pk = `TRIP#${tripId}`
+  const item = { pk, sk: `SWAPPED#${eventId}`, tripId, eventId, swappedBy: userId, swappedAt: new Date().toISOString(), note }
+
   await db.transactWrite([
     { Put: { TableName: db.TABLE_NAME, Item: item } },
+    { Delete: { TableName: db.TABLE_NAME, Key: { pk, sk: `DONE#${eventId}` } } },
     { Delete: { TableName: db.TABLE_NAME, Key: { pk, sk: `SKIPPED#${eventId}` } } },
-    { Delete: { TableName: db.TABLE_NAME, Key: { pk, sk: `SWAPPED#${eventId}` } } },
   ])
 
-  return ok(200, { done: true, eventId })
+  return ok(200, { status: 'swapped', eventId, note: note || null })
 }

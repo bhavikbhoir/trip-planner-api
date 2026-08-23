@@ -16,11 +16,29 @@ async function getTripAggregate(tripId) {
   const suggestions = items.filter((i) => i.sk.startsWith('SUGGESTION#'))
   const approvals = items.filter((i) => i.sk.startsWith('APPROVAL#'))
   const eventCompletions = items.filter((i) => i.sk.startsWith('DONE#'))
+  const eventSkips = items.filter((i) => i.sk.startsWith('SKIPPED#'))
+  const eventSwaps = items.filter((i) => i.sk.startsWith('SWAPPED#'))
   const picks = items.filter((i) => i.sk.startsWith('PICK#'))
   const expenses = items.filter((i) => i.sk.startsWith('EXPENSE#'))
   const tips = items.filter((i) => i.sk.startsWith('TIP#'))
+  const feedback = items.filter((i) => i.sk.startsWith('FEEDBACK#'))
 
-  return { trip, members, logistics, bookings, plans, suggestions, approvals, eventCompletions, picks, expenses, tips }
+  return {
+    trip,
+    members,
+    logistics,
+    bookings,
+    plans,
+    suggestions,
+    approvals,
+    eventCompletions,
+    eventSkips,
+    eventSwaps,
+    picks,
+    expenses,
+    tips,
+    feedback,
+  }
 }
 
 module.exports = { getTripAggregate }

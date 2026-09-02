@@ -15,6 +15,7 @@ provider:
     # controlled separately, by which HTTP API authorizer (cognitoJwt vs
     # cognitoJwtMcp) each route references — this only affects the re-check.
     COGNITO_ALLOWED_CLIENT_IDS: !Join [',', [!Ref TripPlannerUserPoolClient, !Ref TripPlannerMcpClient]]
+    MCP_HOSTED_UI_DOMAIN: !Sub '${TripPlannerUserPoolDomain}.auth.${AWS::Region}.amazoncognito.com'
     WEATHER_SECRET_NAME: trip-planner/weather-api-key
     # Email (SES) — all optional until SES setup is complete. shared/ses.js
     # safely no-ops (logs instead of sending) while SES_FROM_EMAIL or
@@ -80,6 +81,17 @@ provider:
         - Effect: Allow
           Action:
             - cognito-idp:AdminGetUser
+          Resource:
+            - !GetAtt TripPlannerUserPool.Arn
+        - Effect: Allow
+          Action:
+            # Backs functions/mcp/register.js's Dynamic Client Registration
+            # (RFC 7591) endpoint — provisions a real Cognito app client per
+            # connecting MCP device. Scoped to only this user pool; the
+            # endpoint's own rate-limit + hard counter (see register.js) is
+            # what actually protects Cognito's 1,000-app-client-per-pool quota,
+            # not this IAM statement.
+            - cognito-idp:CreateUserPoolClient
           Resource:
             - !GetAtt TripPlannerUserPool.Arn
         - Effect: Allow
@@ -543,6 +555,30 @@ functions:
       - httpApi:
           path: /.well-known/oauth-protected-resource
           method: get
+
+  # Public, unauthenticated by design (RFC 8414) — our own Authorization
+  # Server Metadata document, served at both spec variants. See
+  # functions/mcp/authServerMetadata.js for why this exists instead of just
+  # pointing clients at Cognito's own (registration_endpoint-less) copy.
+  mcpAuthServerMetadata:
+    handler: functions/mcp/authServerMetadata.handler
+    events:
+      - httpApi:
+          path: /.well-known/oauth-authorization-server
+          method: get
+      - httpApi:
+          path: /.well-known/openid-configuration
+          method: get
+
+  # Public, unauthenticated by design (RFC 7591) — DCR has to be reachable
+  # before a client has any credentials. See functions/mcp/register.js for
+  # the guardrails that make an open endpoint like this safe to expose.
+  mcpRegister:
+    handler: functions/mcp/register.handler
+    events:
+      - httpApi:
+          path: /register
+          method: post
 
   # Deliberately no authorizer — CAN-SPAM requires opt-out to work without a
   # login, and this is the URL every notification/reminder email points at.

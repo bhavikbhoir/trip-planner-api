@@ -39,6 +39,11 @@ exports.handler = async (event) => {
     ...feedback,
   ]
   await Promise.all(allItems.map((item) => db.del(item.pk, item.sk)))
+  // Not surfaced anywhere in the aggregate (it's an internal send-once
+  // marker, not display data — see functions/trips/remindersWorker.js), so
+  // it isn't in allItems above; deleting a key that was never written is a
+  // harmless no-op, so this is safe to always attempt.
+  await db.del(`TRIP#${tripId}`, 'REMINDER#trip_starting')
 
   return ok(200, { deleted: true, tripId })
 }

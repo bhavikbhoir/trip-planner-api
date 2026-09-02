@@ -14,5 +14,12 @@ exports.handler = async (event) => {
   }
 
   const profile = await db.get(`USER#${userId}`, 'PROFILE')
-  return ok(200, { theme: profile?.theme || null })
+  return ok(200, {
+    theme: profile?.theme || null,
+    // Both default false (opt-in, not opt-out) — see functions/me/updateEmailPrefs.js.
+    emailPrefs: {
+      tripReminders: profile?.emailPrefs?.tripReminders || false,
+      activityNotifications: profile?.emailPrefs?.activityNotifications || false,
+    },
+  })
 }

@@ -5,6 +5,7 @@ const {
   PutCommand,
   DeleteCommand,
   QueryCommand,
+  ScanCommand,
   BatchGetCommand,
   TransactWriteCommand,
   UpdateCommand,
@@ -34,6 +35,16 @@ async function query(params) {
   return res.Items || []
 }
 
+// A real table scan, not a query — only for the reminders cron
+// (functions/trips/remindersWorker.js), which needs "every trip META item"
+// and has no GSI to query by date. Fine at this project's data volume (a
+// handful of trips, run once a day); would need a startDate-keyed GSI if
+// trip count ever grew enough for a full scan to matter cost/latency-wise.
+async function scan(params) {
+  const res = await doc.send(new ScanCommand({ TableName: TABLE_NAME, ...params }))
+  return res.Items || []
+}
+
 async function batchGet(keys) {
   if (!keys.length) return []
   const res = await doc.send(new BatchGetCommand({ RequestItems: { [TABLE_NAME]: { Keys: keys } } }))
@@ -59,4 +70,4 @@ async function updateIf(pk, sk, { UpdateExpression, ConditionExpression, Express
   )
 }
 
-module.exports = { doc, TABLE_NAME, get, put, del, query, batchGet, transactWrite, updateIf }
+module.exports = { doc, TABLE_NAME, get, put, del, query, scan, batchGet, transactWrite, updateIf }

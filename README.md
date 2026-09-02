@@ -11,6 +11,7 @@ Serverless backend for MANIFEST, a collaborative AI group trip planner.
 - AWS Bedrock (Claude Sonnet for itinerary generation, Claude Haiku for advisor tips)
 - OpenStreetMap Overpass API (real opening-hours/parking grounding) and OSRM (real driving routes) — both free, public instances, no key
 - OpenWeatherMap (current conditions), key in Secrets Manager
+- AWS SES (activity/reminder emails) — optional, see Email setup below
 
 ## Local development
 
@@ -42,6 +43,51 @@ After the first deploy, note the CloudFormation stack outputs `UserPoolId`,
 A CloudWatch Alarm watches `generateWorker` for errors and notifies via SNS
 email — the first deploy triggers an AWS "Subscription Confirmation" email
 that has to be clicked once before alerts actually deliver.
+
+## Email setup (optional — required before any email actually sends)
+
+Everything email-related (activity notifications, trip reminders,
+`functions/me/unsubscribe.js`) is already built and deployed with every
+other endpoint, but `shared/ses.js` safely no-ops — logs what it would have
+sent instead of sending — until both `SES_FROM_EMAIL` and
+`SES_MAILING_ADDRESS` are set. That's deliberate: these are manual,
+account-owner-only steps that can't be scripted or done on your behalf, and
+skipping them shouldn't be able to accidentally email a real user a
+non-compliant message.
+
+1. **Get a sending identity verified in SES.** Two options:
+   - **Fastest — verify a single email address** (e.g. your own): SES
+     console → Verified identities → Create identity → Email address. You'll
+     get a confirmation email to click. Works immediately, including in
+     sandbox mode, but mail visibly comes "from" that one address and skips
+     DKIM/domain-reputation benefits.
+   - **More durable — verify a domain you own**: buy one if you don't have
+     one yet (~$12/yr from any registrar), add it in SES console → Verified
+     identities → Create identity → Domain, then add the DKIM CNAME records
+     SES gives you at your DNS provider. Firebase Hosting's own
+     `*.web.app` domain can't be used here — you need DNS control, which a
+     Firebase Hosting subdomain doesn't give you.
+2. **Request SES production access.** New accounts start in the SES
+   sandbox, which can only email verified addresses. SES console → Account
+   dashboard → Request production access — describe the use case (trip
+   reminders/activity notifications for an invited group of users, low
+   volume, opt-in, one-click unsubscribe already implemented) and expected
+   volume. Usually reviewed within ~24h, not guaranteed.
+3. **Set the env vars** (`.env.example` in this repo has the full list) and
+   redeploy:
+   - `SES_FROM_EMAIL` — the verified address or `notifications@yourdomain.com`
+   - `SES_MAILING_ADDRESS` — a real postal address (CAN-SPAM requires one in
+     every email's footer; a home address works legally but consider a
+     virtual mailbox/registered-agent address if that's a concern)
+   - `UNSUBSCRIBE_SECRET` — any long random string, e.g. `openssl rand -hex 32`
+   - `APP_BASE_URL` — the deployed frontend URL
+   - `API_BASE_URL` — this stack's own `HttpApiUrl` output (grab it after
+     the first deploy, same as the frontend env vars above)
+4. Redeploy (`npm run deploy:dev` / `:prod`). From then on, `notifyMembers()`
+   and the daily reminder cron actually send.
+
+Nothing else needs to change — the IAM policy, EventBridge schedule, and
+both new endpoints are already live regardless of whether SES is configured.
 
 ## Tests
 
@@ -95,8 +141,10 @@ All behind the Cognito JWT authorizer (`Authorization: Bearer <access token>`) u
 | DELETE | `/trips/{tripId}/members/me` | leave a trip (owners must delete the trip instead) |
 | PUT | `/trips/{tripId}/logistics/me` | set the caller's arrival/departure + transport mode |
 | PATCH | `/me/displayName` | update display name across every trip the caller already belongs to (Cognito's own `name` attribute is updated client-side; this syncs the cached copy on each `MEMBER#` item) |
-| GET | `/me` | account-level preferences — currently just `{ theme }` |
+| GET | `/me` | account-level preferences — `{ theme, emailPrefs: { tripReminders, activityNotifications } }` |
 | PATCH | `/me/theme` | set the caller's saved theme (`light`/`dark`), synced across devices |
+| PATCH | `/me/email-prefs` | set one or both email preferences — body `{ tripReminders?, activityNotifications? }`, both default `false` (opt-in) |
+| GET | `/unsubscribe` | public, no auth — one-click opt-out from an email link; query `?token=` (signed, see `shared/unsubscribeToken.js`); returns an HTML confirmation page |
 
 **Bookings & expenses**
 | Method | Path | Purpose |
@@ -165,8 +213,15 @@ notifications feed.
 | Event swap | `TRIP#<tripId>` | `SWAPPED#<eventId>` |
 | Meal pick | `TRIP#<tripId>` | `PICK#<eventId>` |
 | Post-trip feedback | `TRIP#<tripId>` | `FEEDBACK#<userId>` |
+| Reminder-sent marker | `TRIP#<tripId>` | `REMINDER#trip_starting` |
 | Notification | `TRIP#<tripId>` | `NOTIFICATION#<notificationId>` |
 | User profile | `USER#<userId>` | `PROFILE` |
+
+`REMINDER#trip_starting` is an internal send-once marker (see
+`functions/trips/remindersWorker.js`), not display data — it's intentionally
+not part of `getTripAggregate()`, but is still cleaned up on trip delete.
+The User profile item now also carries `emailPrefs: { tripReminders,
+activityNotifications }` alongside `theme` — both default `false`.
 
 An event is at most one of done/skipped/swapped at a time — existence-based,
 like everything else in this table, and kept mutually exclusive via a single
@@ -246,7 +301,10 @@ routes), suggestions/approvals/finalize, a day-of view with per-event
 done/skipped/swapped status tracking (with optional notes), expense tracking
 with debt-simplified settle-up, Haiku-powered advisor tips, notifications,
 and a post-trip lifecycle (mark complete/reopen, a recap of what actually
-happened vs. what was planned, per-member mood feedback). A starter unit test
-suite covers the pure logic modules; most of the codebase is still Lambda
-handlers exercised only by the eval harness and manual testing — broader
-handler-level test coverage is the next real gap.
+happened vs. what was planned, per-member mood feedback). Email
+(activity-notification emails + a daily trip-starting-soon reminder, both
+opt-in, one-click unsubscribe, CAN-SPAM footer) is fully built and deployed
+but stays a safe no-op until SES setup is complete — see Email setup above.
+A starter unit test suite covers the pure logic modules; most of the
+codebase is still Lambda handlers exercised only by the eval harness and
+manual testing — broader handler-level test coverage is the next real gap.

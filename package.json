@@ -16,9 +16,11 @@
   },
   "dependencies": {
     "@aws-sdk/client-bedrock-runtime": "^3.750.0",
+    "@aws-sdk/client-cognito-identity-provider": "^3.1116.0",
     "@aws-sdk/client-dynamodb": "^3.750.0",
     "@aws-sdk/client-lambda": "^3.750.0",
     "@aws-sdk/client-secrets-manager": "^3.750.0",
+    "@aws-sdk/client-sesv2": "^3.1116.0",
     "@aws-sdk/lib-dynamodb": "^3.750.0",
     "jsonwebtoken": "^9.0.2",
     "jwks-rsa": "^3.1.0",

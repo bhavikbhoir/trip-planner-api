@@ -21,7 +21,11 @@ exports.handler = async (event) => {
 
   if (!VALID.includes(body.theme)) return err(400, `theme must be one of: ${VALID.join(', ')}`)
 
-  await db.put({ pk: `USER#${userId}`, sk: 'PROFILE', theme: body.theme, updatedAt: new Date().toISOString() })
+  // Read-merge-write, not a blind put — PROFILE also carries emailPrefs
+  // (see updateEmailPrefs.js), and a full-item put here would silently wipe
+  // it out the next time someone just flips their theme.
+  const existing = await db.get(`USER#${userId}`, 'PROFILE')
+  await db.put({ ...existing, pk: `USER#${userId}`, sk: 'PROFILE', theme: body.theme, updatedAt: new Date().toISOString() })
 
   return ok(200, { theme: body.theme })
 }

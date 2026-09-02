@@ -10,7 +10,23 @@ provider:
     TABLE_NAME: trip-planner-${self:provider.stage}
     COGNITO_USER_POOL_ID: !Ref TripPlannerUserPool
     COGNITO_CLIENT_ID: !Ref TripPlannerUserPoolClient
+    # Widens shared/auth.js's defense-in-depth JWT re-check to accept tokens
+    # from either app client. Which *route* a token can reach is still
+    # controlled separately, by which HTTP API authorizer (cognitoJwt vs
+    # cognitoJwtMcp) each route references — this only affects the re-check.
+    COGNITO_ALLOWED_CLIENT_IDS: !Join [',', [!Ref TripPlannerUserPoolClient, !Ref TripPlannerMcpClient]]
     WEATHER_SECRET_NAME: trip-planner/weather-api-key
+    # Email (SES) — all optional until SES setup is complete. shared/ses.js
+    # safely no-ops (logs instead of sending) while SES_FROM_EMAIL or
+    # SES_MAILING_ADDRESS is unset — neither exists until a sending identity
+    # is verified in SES and AWS approves a production-access request, both
+    # manual steps only doable from the AWS console (see README). Set these
+    # in a local .env (useDotenv above) once that's done.
+    SES_FROM_EMAIL: ${env:SES_FROM_EMAIL, ''}
+    SES_MAILING_ADDRESS: ${env:SES_MAILING_ADDRESS, ''}
+    UNSUBSCRIBE_SECRET: ${env:UNSUBSCRIBE_SECRET, ''}
+    APP_BASE_URL: ${env:APP_BASE_URL, ''}
+    API_BASE_URL: ${env:API_BASE_URL, ''}
   iam:
     role:
       statements:
@@ -54,6 +70,20 @@ provider:
             - !Sub 'arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:trip-planner/weather-api-key-*'
         - Effect: Allow
           Action:
+            - ses:SendEmail
+            - ses:SendRawEmail
+          # No verified sending identity exists yet (see SES_FROM_EMAIL
+          # above), so this can't be scoped to a specific identity ARN until
+          # one is verified — tighten this to that identity's ARN once SES
+          # setup is done; '*' is a temporary stand-in, not the end state.
+          Resource: '*'
+        - Effect: Allow
+          Action:
+            - cognito-idp:AdminGetUser
+          Resource:
+            - !GetAtt TripPlannerUserPool.Arn
+        - Effect: Allow
+          Action:
             - lambda:InvokeFunction
           Resource:
             # Built as a string, not !GetAtt GenerateWorkerLambdaFunction.Arn —
@@ -86,6 +116,16 @@ provider:
         issuerUrl: !Sub 'https://cognito-idp.${AWS::Region}.amazonaws.com/${TripPlannerUserPool}'
         audience:
           - !Ref TripPlannerUserPoolClient
+      # Deliberately separate from cognitoJwt, scoped to only the MCP app
+      # client's audience — a token minted for MCP can authorize /mcp but
+      # can never satisfy cognitoJwt on the raw REST routes, even though the
+      # mcp Lambda itself has equivalent access to the same user's data.
+      cognitoJwtMcp:
+        type: jwt
+        identitySource: $request.header.Authorization
+        issuerUrl: !Sub 'https://cognito-idp.${AWS::Region}.amazonaws.com/${TripPlannerUserPool}'
+        audience:
+          - !Ref TripPlannerMcpClient
 
 functions:
   createTrip:
@@ -466,6 +506,56 @@ functions:
           authorizer:
             name: cognitoJwt
 
+  updateMyEmailPrefs:
+    handler: functions/me/updateEmailPrefs.handler
+    events:
+      - httpApi:
+          path: /me/email-prefs
+          method: patch
+          authorizer:
+            name: cognitoJwt
+
+  # Remote MCP server — exposes existing handlers as MCP tools by invoking
+  # them in-process (see functions/mcp/callHandler.js), so every handler's
+  # own guardrails run unchanged. Behind cognitoJwtMcp, not cognitoJwt — see
+  # that authorizer's comment above for why they're kept separate.
+  mcp:
+    handler: functions/mcp/mcpHttp.handler
+    timeout: 29
+    events:
+      - httpApi:
+          path: /mcp
+          method: post
+          authorizer:
+            name: cognitoJwtMcp
+
+  # Public, unauthenticated by design (RFC 9728) — an MCP client fetches this
+  # *before* it has a token, to discover which authorization server to use.
+  mcpWellKnown:
+    handler: functions/mcp/wellKnown.handler
+    events:
+      - httpApi:
+          path: /.well-known/oauth-protected-resource
+          method: get
+
+  # Deliberately no authorizer — CAN-SPAM requires opt-out to work without a
+  # login, and this is the URL every notification/reminder email points at.
+  unsubscribe:
+    handler: functions/me/unsubscribe.handler
+    events:
+      - httpApi:
+          path: /unsubscribe
+          method: get
+
+  # No httpApi event — fires on a schedule, not a request. See
+  # REMINDER_WINDOW_DAYS in the handler for why "once a day" tolerates a
+  # missed run without ever double-sending or skipping a trip entirely.
+  sendTripReminders:
+    handler: functions/trips/remindersWorker.handler
+    timeout: 60
+    events:
+      - schedule: rate(1 day)
+
 resources:
   Resources:
     TripPlannerUserPool:
@@ -494,6 +584,47 @@ resources:
           - ALLOW_USER_PASSWORD_AUTH
           - ALLOW_REFRESH_TOKEN_AUTH
           - ALLOW_USER_SRP_AUTH
+
+    # Hosted UI domain — required for OAuth Authorization Code flow (the MCP
+    # client below) and for Cognito to auto-serve /.well-known/openid-
+    # configuration + JWKS, which the MCP authorization-server metadata
+    # points at. Does not affect the web client, which never used Hosted UI.
+    TripPlannerUserPoolDomain:
+      Type: AWS::Cognito::UserPoolDomain
+      Properties:
+        Domain: !Sub 'trip-planner-${AWS::AccountId}-${self:provider.stage}'
+        UserPoolId: !Ref TripPlannerUserPool
+
+    # Separate, additive app client for MCP clients (Claude Desktop, Claude
+    # Code, MCP Inspector) — public client (no secret) using Authorization
+    # Code + PKCE, distinct from the web client's SRP/password flow. Cognito
+    # doesn't support Dynamic Client Registration, so this one fixed client
+    # is pre-registered; the target MCP client must support manually
+    # configuring an OAuth Client ID rather than requiring DCR.
+    #
+    # CallbackURLs below is a placeholder for MCP Inspector's documented
+    # default local callback — confirm it against the Inspector version you
+    # actually run, and add one entry per additional client (Claude Desktop,
+    # Claude Code, Claude.ai) as you connect each; Cognito requires at least
+    # one non-empty, well-formed URL here to enable OAuth flows at all.
+    TripPlannerMcpClient:
+      Type: AWS::Cognito::UserPoolClient
+      Properties:
+        ClientName: trip-planner-mcp-${self:provider.stage}
+        UserPoolId: !Ref TripPlannerUserPool
+        GenerateSecret: false
+        AllowedOAuthFlows:
+          - code
+        AllowedOAuthFlowsUserPoolClient: true
+        AllowedOAuthScopes:
+          - openid
+          - email
+        SupportedIdentityProviders:
+          - COGNITO
+        CallbackURLs:
+          - http://localhost:6274/oauth/callback
+        ExplicitAuthFlows:
+          - ALLOW_REFRESH_TOKEN_AUTH
 
     TripPlannerTable:
       Type: AWS::DynamoDB::Table
@@ -595,6 +726,10 @@ resources:
       Value: !Ref TripPlannerUserPool
     UserPoolClientId:
       Value: !Ref TripPlannerUserPoolClient
+    McpClientId:
+      Value: !Ref TripPlannerMcpClient
+    McpHostedUiDomain:
+      Value: !Sub '${TripPlannerUserPoolDomain}.auth.${AWS::Region}.amazoncognito.com'
     # HttpApiUrl is intentionally not redefined here — Serverless Framework
     # auto-generates an Output with this exact name for any httpApi event,
     # and a duplicate definition here caused CloudFormation's

@@ -528,6 +528,12 @@ functions:
           method: post
           authorizer:
             name: cognitoJwtMcp
+      # No authorizer — a client probing for optional SSE-stream support (see
+      # mcpHttp.js's 405 handling) should get an unambiguous answer whether
+      # or not it has a token yet.
+      - httpApi:
+          path: /mcp
+          method: get
 
   # Public, unauthenticated by design (RFC 9728) — an MCP client fetches this
   # *before* it has a token, to discover which authorization server to use.

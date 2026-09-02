@@ -108,6 +108,19 @@ exports.handler = async (event) => {
     return { statusCode: 204, headers, body: '' }
   }
 
+  // Streamable HTTP transport spec: a client MAY send GET to open a
+  // server-initiated SSE stream; a server that doesn't support that MUST
+  // reply 405, not a bare 404. This is registered as its own unauthenticated
+  // route (see serverless.yml) specifically so this response is unambiguous
+  // regardless of whether the client already has a token yet.
+  if (event.requestContext?.http?.method === 'GET') {
+    return {
+      statusCode: 405,
+      headers,
+      body: JSON.stringify({ error: 'Method Not Allowed: this server is stateless and does not support the SSE stream.' }),
+    }
+  }
+
   const authHeader = event.headers?.authorization || event.headers?.Authorization
 
   let payload

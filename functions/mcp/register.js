@@ -112,7 +112,10 @@ exports.handler = async (event) => {
         GenerateSecret: false,
         AllowedOAuthFlows: ['code'],
         AllowedOAuthFlowsUserPoolClient: true,
-        AllowedOAuthScopes: ['openid', 'email'],
+        // No "openid" scope — see serverless.yml's TripPlannerMcpClient
+        // comment for why: avoids Cognito issuing an ID token whose real
+        // issuer would mismatch what we advertise in authServerMetadata.js.
+        AllowedOAuthScopes: ['email'],
         SupportedIdentityProviders: ['COGNITO'],
         CallbackURLs: redirectUris,
         ExplicitAuthFlows: ['ALLOW_REFRESH_TOKEN_AUTH'],
@@ -145,6 +148,6 @@ exports.handler = async (event) => {
     grant_types: ['authorization_code', 'refresh_token'],
     response_types: ['code'],
     token_endpoint_auth_method: 'none',
-    scope: 'openid email',
+    scope: 'email',
   })
 }

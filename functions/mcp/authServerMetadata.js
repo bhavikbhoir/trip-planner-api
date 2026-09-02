@@ -9,13 +9,17 @@
 // point straight at Cognito's real Hosted UI — we don't proxy the actual
 // auth/token exchange, only host this one metadata document ourselves.
 //
-// Nuance worth knowing: tokens Cognito issues still carry the *real*
-// Cognito issuer in `iss`, not this document's `issuer` field. Our own
-// token validation (the cognitoJwtMcp authorizer + shared/auth.js) checks
-// against the real issuer directly and never reads this document, so it's
-// unaffected. Whether a given MCP client cross-validates issuer-vs-metadata
-// strictly enough to care is implementation-dependent — verified against a
-// real client (Claude Desktop's own DCR flow), not assumed from spec text.
+// Nuance that turned out to matter in practice: tokens Cognito issues still
+// carry the *real* Cognito issuer in `iss`, not this document's `issuer`
+// field. Our own token validation (the cognitoJwtMcp authorizer +
+// shared/auth.js) checks against the real issuer directly and never reads
+// this document, so it's unaffected either way. But a first live test
+// against Claude Desktop's DCR flow failed silently client-side (no /mcp
+// call ever made, per CloudWatch) — consistent with its OAuth client
+// validating an ID token's issuer against this document and rejecting the
+// mismatch before ever using the token. Fix: don't request the "openid"
+// scope anywhere (see TripPlannerMcpClient / register.js) — no ID token
+// means nothing for a client to cross-validate against `issuer` at all.
 exports.handler = async (event) => {
   const region = process.env.AWS_REGION || 'us-east-1'
   const host = event.headers?.host || event.headers?.Host || event.requestContext?.domainName
@@ -31,7 +35,7 @@ exports.handler = async (event) => {
     grant_types_supported: ['authorization_code', 'refresh_token'],
     token_endpoint_auth_methods_supported: ['none'],
     code_challenge_methods_supported: ['S256'],
-    scopes_supported: ['openid', 'email'],
+    scopes_supported: ['email'],
   }
 
   return {

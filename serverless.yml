@@ -658,16 +658,15 @@ resources:
         AllowedOAuthFlows:
           - code
         AllowedOAuthFlowsUserPoolClient: true
-        # Deliberately no "openid" scope — that's what makes Cognito issue an
-        # ID token alongside the access token, and our resource server never
-        # reads one (shared/auth.js only ever checks token_use === 'access').
-        # An MCP client doing standard OIDC-style validation would see that
-        # ID token's real iss (Cognito's) mismatch our own advertised issuer
-        # (see functions/mcp/authServerMetadata.js's comment on why that's
-        # deliberately not Cognito's) and fail client-side before ever
-        # calling /mcp. Omitting the scope means no ID token exists to
-        # validate at all.
+        # Cognito rejects "email" without "openid" (confirmed by a failed
+        # deploy: "openid is required with email scope") — so an ID token is
+        # unavoidable here, and likely requested by most real clients
+        # regardless of what we advertise anyway. See
+        # functions/mcp/authServerMetadata.js for how the issuer-mismatch
+        # risk this creates is actually addressed (matching the real
+        # Cognito issuer in that document, not by avoiding the ID token).
         AllowedOAuthScopes:
+          - openid
           - email
         SupportedIdentityProviders:
           - COGNITO

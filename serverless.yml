@@ -149,21 +149,23 @@ provider:
       # can never satisfy cognitoJwt on the raw REST routes, even though the
       # mcp Lambda itself has equivalent access to the same user's data.
       #
-      # STAGED CHANGE IN PROGRESS: this still points at Cognito's real
-      # issuer deliberately, even though functions/mcp/oauth/* (new in this
-      # change) now mints our own tokens with a different issuer. AWS's own
-      # docs warn that an authorizer whose issuer doesn't serve a well-formed
-      # /.well-known/openid-configuration fails to be *created* silently —
-      # deploy looks successful, the route just stops existing — so this
-      # gets flipped to MCP_ISSUER in its own follow-up deploy, only after
-      # manually verifying our new discovery document + full
-      # authorize->callback->token round-trip against this same deployment.
+      # Flipped from Cognito's real issuer to our own (functions/mcp/oauth/*)
+      # only after manually verifying, against the prior deploy: the
+      # discovery document at this exact issuer's /.well-known/openid-
+      # configuration, /oauth/jwks.json, a full authorize->callback->token
+      # round-trip producing a token with a real `aud` claim, that the
+      # token's signature verifies against the published JWKS, and refresh
+      # rotation — see commit history. AWS's own docs warn that an
+      # authorizer whose issuer doesn't serve a well-formed discovery
+      # document fails to be *created* silently (deploy succeeds, the route
+      # just stops existing), which is exactly why this wasn't flipped in
+      # the same deploy as the endpoints it depends on.
       cognitoJwtMcp:
         type: jwt
         identitySource: $request.header.Authorization
-        issuerUrl: !Sub 'https://cognito-idp.${AWS::Region}.amazonaws.com/${TripPlannerUserPool}'
+        issuerUrl: !Sub 'https://${HttpApi}.execute-api.${AWS::Region}.amazonaws.com'
         audience:
-          - !Ref TripPlannerMcpClient
+          - !Sub 'https://${HttpApi}.execute-api.${AWS::Region}.amazonaws.com/mcp'
 
 functions:
   createTrip:

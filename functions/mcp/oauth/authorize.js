@@ -20,6 +20,30 @@ function isCimdClientId(clientId) {
   return typeof clientId === 'string' && clientId.startsWith('https://')
 }
 
+// RFC 8252 §7.3 requires matching loopback redirect_uris with the port
+// ignored — native apps (e.g. Claude Code, whose CIMD document declares
+// bare http://localhost/callback and http://127.0.0.1/callback) bind an
+// ephemeral port at runtime that can't be known in advance. Applying the
+// same treatment to "localhost" as to the IP-literal loopback forms matches
+// Claude's own documented behavior, even though RFC 8252 §8.3 otherwise
+// discourages "localhost" in favor of 127.0.0.1.
+const LOOPBACK_HOSTS = ['localhost', '127.0.0.1', '::1', '[::1]']
+
+function normalizeForLoopbackMatch(uri) {
+  try {
+    const parsed = new URL(uri)
+    if (LOOPBACK_HOSTS.includes(parsed.hostname)) parsed.port = ''
+    return parsed.toString()
+  } catch {
+    return uri
+  }
+}
+
+function redirectUriIsRegistered(registeredUris, requestedUri) {
+  const normalizedRequested = normalizeForLoopbackMatch(requestedUri)
+  return registeredUris.some((registered) => normalizeForLoopbackMatch(registered) === normalizedRequested)
+}
+
 function badRequest(message) {
   return { statusCode: 400, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ error: 'invalid_request', error_description: message }) }
 }
@@ -70,13 +94,13 @@ async function resolveClient(clientId, redirectUri) {
   if (isCimdClientId(clientId)) {
     const doc = await fetchCimdDocument(clientId)
     if (!doc) return { error: 'CIMD document could not be fetched or validated' }
-    if (!doc.redirect_uris.includes(redirectUri)) return { error: 'redirect_uri not listed in the client metadata document' }
+    if (!redirectUriIsRegistered(doc.redirect_uris, redirectUri)) return { error: 'redirect_uri not listed in the client metadata document' }
     return { clientId, redirectUris: doc.redirect_uris }
   }
 
   const client = await store.getClient(clientId)
   if (!client) return { error: 'Unknown client_id' }
-  if (!client.redirectUris.includes(redirectUri)) return { error: 'redirect_uri not registered for this client' }
+  if (!redirectUriIsRegistered(client.redirectUris, redirectUri)) return { error: 'redirect_uri not registered for this client' }
   return { clientId, redirectUris: client.redirectUris }
 }
 

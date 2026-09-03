@@ -108,12 +108,24 @@ provider:
             - !Sub 'arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:trip-planner-api-${self:provider.stage}-generateWorker'
   httpApi:
     cors:
+      # Global for the whole API (HTTP API CORS isn't configurable per-route)
+      # — API Gateway's own CORS layer takes precedence over any headers an
+      # individual Lambda sets, so a restrictive allow-list here silently
+      # blocks a browser-context caller regardless of what e.g.
+      # functions/mcp/wellKnown.js sets on its own responses. Added
+      # claude.ai specifically (not a wildcard) — that's where the MCP
+      # connector's OAuth callback (functions/mcp/register.js's clients get
+      # redirect_uri=https://claude.ai/api/mcp/auth_callback) and likely any
+      # browser-context part of that flow runs.
       allowedOrigins:
         - http://localhost:5173
         - https://trip-planner-manifest.web.app
+        - https://claude.ai
       allowedHeaders:
         - Content-Type
         - Authorization
+        - mcp-session-id
+        - mcp-protocol-version
       allowedMethods:
         - GET
         - POST

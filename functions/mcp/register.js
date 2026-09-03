@@ -52,8 +52,17 @@ function isValidRedirectUri(uri) {
   return !['javascript:', 'data:', 'vbscript:'].includes(parsed.protocol)
 }
 
+// Access-Control-Allow-Origin matches wellKnown.js/authServerMetadata.js —
+// without it, a browser-context caller (as opposed to a server-to-server or
+// Electron-main-process one) could have this POST succeed server-side (a
+// real Cognito client gets created either way) while being blocked from
+// ever reading the client_id back out of the response body.
 function respond(statusCode, body) {
-  return { statusCode, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }
+  return {
+    statusCode,
+    headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' },
+    body: JSON.stringify(body),
+  }
 }
 
 exports.handler = async (event) => {

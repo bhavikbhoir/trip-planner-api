@@ -710,12 +710,9 @@ resources:
     # authorize.js + callback.js — external MCP callers (Claude, Inspector,
     # mcp-remote) go through our own /oauth/authorize instead of hitting
     # Cognito directly, so its only registered CallbackURL is our own
-    # /oauth/callback. The old localhost:6274 entry (MCP Inspector's direct-
-    # to-Cognito callback, from before this proxy existed) stays temporarily
-    # so mcp-remote's already-working setup doesn't break mid-migration —
-    # remove it once the cognitoJwtMcp authorizer is flipped to MCP_ISSUER
-    # (see that authorizer's comment) and mcp-remote is confirmed working
-    # through the new /oauth/* endpoints instead.
+    # /oauth/callback. (The old localhost:6274 entry, from the pre-proxy
+    # mcp-remote/Inspector era, has been removed — DCR through Claude
+    # Desktop's native connector is confirmed working end to end.)
     TripPlannerMcpClient:
       Type: AWS::Cognito::UserPoolClient
       Properties:
@@ -736,7 +733,6 @@ resources:
           - COGNITO
         CallbackURLs:
           - !Sub 'https://${HttpApi}.execute-api.${AWS::Region}.amazonaws.com/oauth/callback'
-          - http://localhost:6274/oauth/callback
         ExplicitAuthFlows:
           - ALLOW_REFRESH_TOKEN_AUTH
 

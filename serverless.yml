@@ -14,8 +14,22 @@ provider:
     # from either app client. Which *route* a token can reach is still
     # controlled separately, by which HTTP API authorizer (cognitoJwt vs
     # cognitoJwtMcp) each route references — this only affects the re-check.
-    COGNITO_ALLOWED_CLIENT_IDS: !Join [',', [!Ref TripPlannerUserPoolClient, !Ref TripPlannerMcpClient]]
+    COGNITO_ALLOWED_CLIENT_IDS: !Ref TripPlannerUserPoolClient
     MCP_HOSTED_UI_DOMAIN: !Sub '${TripPlannerUserPoolDomain}.auth.${AWS::Region}.amazoncognito.com'
+    # The Cognito app client functions/mcp/oauth/authorize.js drives to do
+    # the actual login — external MCP callers never see this client_id.
+    COGNITO_MCP_CLIENT_ID: !Ref TripPlannerMcpClient
+    # This repo's own MCP OAuth issuer/resource identity — used by
+    # shared/auth.js (verifying), functions/mcp/oauth/tokens.js (signing),
+    # functions/mcp/authServerMetadata.js (advertising), and the
+    # cognitoJwtMcp authorizer below (enforcing). All four MUST agree
+    # byte-for-byte, which is exactly why every one of them reads from
+    # these two vars instead of deriving the value independently.
+    MCP_ISSUER: !Sub 'https://${HttpApi}.execute-api.${AWS::Region}.amazonaws.com'
+    MCP_RESOURCE_URL: !Sub 'https://${HttpApi}.execute-api.${AWS::Region}.amazonaws.com/mcp'
+    MCP_OAUTH_SIGNING_KEY_SECRET_NAME: trip-planner/mcp-oauth-signing-key
+    # Only real-world CIMD issuer known today — see functions/mcp/oauth/authorize.js.
+    CIMD_ALLOWED_HOSTS: claude.ai
     WEATHER_SECRET_NAME: trip-planner/weather-api-key
     # Email (SES) — all optional until SES setup is complete. shared/ses.js
     # safely no-ops (logs instead of sending) while SES_FROM_EMAIL or
@@ -69,6 +83,7 @@ provider:
             - secretsmanager:GetSecretValue
           Resource:
             - !Sub 'arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:trip-planner/weather-api-key-*'
+            - !Sub 'arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:trip-planner/mcp-oauth-signing-key-*'
         - Effect: Allow
           Action:
             - ses:SendEmail
@@ -81,17 +96,6 @@ provider:
         - Effect: Allow
           Action:
             - cognito-idp:AdminGetUser
-          Resource:
-            - !GetAtt TripPlannerUserPool.Arn
-        - Effect: Allow
-          Action:
-            # Backs functions/mcp/register.js's Dynamic Client Registration
-            # (RFC 7591) endpoint — provisions a real Cognito app client per
-            # connecting MCP device. Scoped to only this user pool; the
-            # endpoint's own rate-limit + hard counter (see register.js) is
-            # what actually protects Cognito's 1,000-app-client-per-pool quota,
-            # not this IAM statement.
-            - cognito-idp:CreateUserPoolClient
           Resource:
             - !GetAtt TripPlannerUserPool.Arn
         - Effect: Allow
@@ -144,6 +148,16 @@ provider:
       # client's audience — a token minted for MCP can authorize /mcp but
       # can never satisfy cognitoJwt on the raw REST routes, even though the
       # mcp Lambda itself has equivalent access to the same user's data.
+      #
+      # STAGED CHANGE IN PROGRESS: this still points at Cognito's real
+      # issuer deliberately, even though functions/mcp/oauth/* (new in this
+      # change) now mints our own tokens with a different issuer. AWS's own
+      # docs warn that an authorizer whose issuer doesn't serve a well-formed
+      # /.well-known/openid-configuration fails to be *created* silently —
+      # deploy looks successful, the route just stops existing — so this
+      # gets flipped to MCP_ISSUER in its own follow-up deploy, only after
+      # manually verifying our new discovery document + full
+      # authorize->callback->token round-trip against this same deployment.
       cognitoJwtMcp:
         type: jwt
         identitySource: $request.header.Authorization
@@ -592,6 +606,40 @@ functions:
           path: /register
           method: post
 
+  # Our own OAuth authorization server (see functions/mcp/oauth/*) — all
+  # public/unauthenticated by design, they *are* the auth layer, not
+  # something behind it.
+  mcpOAuthAuthorize:
+    handler: functions/mcp/oauth/authorize.handler
+    timeout: 10
+    events:
+      - httpApi:
+          path: /oauth/authorize
+          method: get
+
+  mcpOAuthCallback:
+    handler: functions/mcp/oauth/callback.handler
+    timeout: 10
+    events:
+      - httpApi:
+          path: /oauth/callback
+          method: get
+
+  mcpOAuthToken:
+    handler: functions/mcp/oauth/token.handler
+    timeout: 10
+    events:
+      - httpApi:
+          path: /oauth/token
+          method: post
+
+  mcpOAuthJwks:
+    handler: functions/mcp/oauth/jwks.handler
+    events:
+      - httpApi:
+          path: /oauth/jwks.json
+          method: get
+
   # Deliberately no authorizer — CAN-SPAM requires opt-out to work without a
   # login, and this is the URL every notification/reminder email points at.
   unsubscribe:
@@ -656,11 +704,16 @@ resources:
     # is pre-registered; the target MCP client must support manually
     # configuring an OAuth Client ID rather than requiring DCR.
     #
-    # CallbackURLs below is a placeholder for MCP Inspector's documented
-    # default local callback — confirm it against the Inspector version you
-    # actually run, and add one entry per additional client (Claude Desktop,
-    # Claude Code, Claude.ai) as you connect each; Cognito requires at least
-    # one non-empty, well-formed URL here to enable OAuth flows at all.
+    # This client now only ever talks to Cognito FROM functions/mcp/oauth/
+    # authorize.js + callback.js — external MCP callers (Claude, Inspector,
+    # mcp-remote) go through our own /oauth/authorize instead of hitting
+    # Cognito directly, so its only registered CallbackURL is our own
+    # /oauth/callback. The old localhost:6274 entry (MCP Inspector's direct-
+    # to-Cognito callback, from before this proxy existed) stays temporarily
+    # so mcp-remote's already-working setup doesn't break mid-migration —
+    # remove it once the cognitoJwtMcp authorizer is flipped to MCP_ISSUER
+    # (see that authorizer's comment) and mcp-remote is confirmed working
+    # through the new /oauth/* endpoints instead.
     TripPlannerMcpClient:
       Type: AWS::Cognito::UserPoolClient
       Properties:
@@ -671,18 +724,16 @@ resources:
           - code
         AllowedOAuthFlowsUserPoolClient: true
         # Cognito rejects "email" without "openid" (confirmed by a failed
-        # deploy: "openid is required with email scope") — so an ID token is
-        # unavoidable here, and likely requested by most real clients
-        # regardless of what we advertise anyway. See
-        # functions/mcp/authServerMetadata.js for how the issuer-mismatch
-        # risk this creates is actually addressed (matching the real
-        # Cognito issuer in that document, not by avoiding the ID token).
+        # deploy: "openid is required with email scope"). Harmless now — the
+        # resulting ID token is only ever decoded internally by callback.js
+        # for its `sub`, never handed to an external caller.
         AllowedOAuthScopes:
           - openid
           - email
         SupportedIdentityProviders:
           - COGNITO
         CallbackURLs:
+          - !Sub 'https://${HttpApi}.execute-api.${AWS::Region}.amazonaws.com/oauth/callback'
           - http://localhost:6274/oauth/callback
         ExplicitAuthFlows:
           - ALLOW_REFRESH_TOKEN_AUTH

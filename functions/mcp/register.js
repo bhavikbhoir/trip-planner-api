@@ -1,26 +1,22 @@
 const { nanoid } = require('nanoid')
-const { CognitoIdentityProviderClient, CreateUserPoolClientCommand } = require('@aws-sdk/client-cognito-identity-provider')
 const db = require('../../shared/db')
 const { logUsageEvent } = require('../../shared/usageLog')
+const store = require('./oauth/store')
 
-// RFC 7591 Dynamic Client Registration, fronting Cognito (which has no
-// native DCR support) with CreateUserPoolClient. Public and unauthenticated
-// by design — DCR has to be reachable before a client has any credentials —
-// which is exactly why this file guards harder than anything else in this
-// codebase: every successful call permanently provisions a real AWS
-// resource, and Cognito hard-caps app clients at 1,000 per user pool.
-// Exhausting that breaks OAuth for every user, not just this one — an
-// availability guardrail, not a cost one.
+// RFC 7591 Dynamic Client Registration. Public and unauthenticated by
+// design — DCR has to be reachable before a client has any credentials.
+//
+// Unlike the first version of this file, this no longer touches Cognito at
+// all: registering a client just writes a DynamoDB row (see
+// functions/mcp/oauth/store.js) that functions/mcp/oauth/authorize.js looks
+// up later. No real AWS resource gets created per registration anymore, so
+// Cognito's 1,000-app-client-per-pool quota is no longer a concern here —
+// the guardrails below are now generic public-write-endpoint abuse/cost
+// protection, not quota protection specifically.
 
-const USER_POOL_ID = process.env.COGNITO_USER_POOL_ID
 const MAX_REDIRECT_URIS = 5
-// Well under Cognito's 1,000/pool ceiling — a durable backstop the per-IP
-// throttle below can't provide on its own (that one resets per warm
-// container; this one is atomic and global).
-const MAX_TOTAL_REGISTRATIONS = 400
-const COUNTER_KEY = { pk: 'MCPDCR#counter', sk: 'META' }
-
-const cognito = new CognitoIdentityProviderClient({ region: process.env.AWS_REGION || 'us-east-1' })
+const MAX_TOTAL_REGISTRATIONS = 2000
+const COUNTER_KEY = { pk: 'OAUTHDCR#counter', sk: 'META' }
 
 // Per-IP soft throttle — in-memory, resets per warm Lambda container. Same
 // pattern and same honest limitation as the-gooners-world-api's agentChat
@@ -52,11 +48,6 @@ function isValidRedirectUri(uri) {
   return !['javascript:', 'data:', 'vbscript:'].includes(parsed.protocol)
 }
 
-// Access-Control-Allow-Origin matches wellKnown.js/authServerMetadata.js —
-// without it, a browser-context caller (as opposed to a server-to-server or
-// Electron-main-process one) could have this POST succeed server-side (a
-// real Cognito client gets created either way) while being blocked from
-// ever reading the client_id back out of the response body.
 function respond(statusCode, body) {
   return {
     statusCode,
@@ -110,43 +101,10 @@ exports.handler = async (event) => {
   }
 
   const clientName = (typeof body.client_name === 'string' && body.client_name.trim().slice(0, 100)) || 'mcp-client'
-  const suffixedName = `${clientName}-${nanoid(8)}`
-
-  let created
-  try {
-    created = await cognito.send(
-      new CreateUserPoolClientCommand({
-        UserPoolId: USER_POOL_ID,
-        ClientName: suffixedName,
-        GenerateSecret: false,
-        AllowedOAuthFlows: ['code'],
-        AllowedOAuthFlowsUserPoolClient: true,
-        // Cognito requires "openid" whenever "email" is requested — see
-        // serverless.yml's TripPlannerMcpClient comment.
-        AllowedOAuthScopes: ['openid', 'email'],
-        SupportedIdentityProviders: ['COGNITO'],
-        CallbackURLs: redirectUris,
-        ExplicitAuthFlows: ['ALLOW_REFRESH_TOKEN_AUTH'],
-      })
-    )
-  } catch (e) {
-    console.log(JSON.stringify({ mcpClientRegistrationFailed: true, error: e.message, sourceIp }))
-    return respond(503, { error: 'server_error', error_description: 'Could not register a client right now.' })
-  }
-
-  const clientId = created.UserPoolClient.ClientId
+  const clientId = nanoid()
   const now = new Date()
 
-  await db.put({
-    pk: `MCPCLIENT#${clientId}`,
-    sk: 'META',
-    clientId,
-    clientName: suffixedName,
-    redirectUris,
-    createdAt: now.toISOString(),
-    sourceIp,
-  })
-
+  await store.putClient({ clientId, redirectUris, clientName, source: 'dcr' })
   logUsageEvent('mcp_client_registered', { clientId })
 
   return respond(201, {
@@ -156,6 +114,5 @@ exports.handler = async (event) => {
     grant_types: ['authorization_code', 'refresh_token'],
     response_types: ['code'],
     token_endpoint_auth_method: 'none',
-    scope: 'openid email',
   })
 }

@@ -26,12 +26,18 @@ exports.handler = async (event) => {
   if (body.companions && !Array.isArray(body.companions)) {
     return err(400, 'companions must be an array of { name, age }')
   }
+  if (body.companions?.some((c) => !c?.name?.trim() || c.age === '' || c.age == null || Number.isNaN(Number(c.age)))) {
+    return err(400, 'each companion needs a name and a numeric age')
+  }
 
   const updated = {
     ...member,
     displayName: body.displayName !== undefined ? body.displayName : member.displayName || null,
     preferences: { ...(member.preferences || {}), ...(body.preferences || {}) },
-    companions: body.companions !== undefined ? body.companions : member.companions || [],
+    companions:
+      body.companions !== undefined
+        ? body.companions.map((c) => ({ ...c, age: Number(c.age) }))
+        : member.companions || [],
     updatedAt: new Date().toISOString(),
   }
 

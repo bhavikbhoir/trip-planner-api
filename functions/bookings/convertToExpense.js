@@ -4,6 +4,7 @@ const { extractUserId } = require('../../shared/auth')
 const { ok, err } = require('../../shared/response')
 const { getTripAggregate } = require('../../shared/tripAggregate')
 const { logUsageEvent } = require('../../shared/usageLog')
+const { normalizeShares } = require('../../shared/expenseShares')
 
 // Turns a booking's cost into a tracked expense — description/amount come
 // from the booking itself, the caller only picks paidBy/splitBetween (same
@@ -52,6 +53,13 @@ exports.handler = async (event) => {
   const invalidSplit = split.find((id) => !memberIds.has(id))
   if (invalidSplit) return err(400, `splitBetween includes a non-member: ${invalidSplit}`)
 
+  let normalizedShares
+  try {
+    normalizedShares = normalizeShares(body.shares, split)
+  } catch (e) {
+    return err(400, e.message)
+  }
+
   const expenseId = nanoid(10)
   const expense = {
     pk: `TRIP#${tripId}`,
@@ -62,6 +70,7 @@ exports.handler = async (event) => {
     amount: booking.cost,
     paidBy: payer,
     splitBetween: split,
+    shares: normalizedShares,
     addedBy: userId,
     sourceBookingId: bookingId,
     createdAt: new Date().toISOString(),

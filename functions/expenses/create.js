@@ -4,6 +4,7 @@ const { extractUserId } = require('../../shared/auth')
 const { ok, err } = require('../../shared/response')
 const { getTripAggregate } = require('../../shared/tripAggregate')
 const { logUsageEvent } = require('../../shared/usageLog')
+const { normalizeShares } = require('../../shared/expenseShares')
 
 exports.handler = async (event) => {
   let userId
@@ -29,7 +30,7 @@ exports.handler = async (event) => {
     return err(400, 'Invalid JSON body')
   }
 
-  const { description, amount, paidBy, splitBetween } = body
+  const { description, amount, paidBy, splitBetween, shares } = body
   if (!description || typeof description !== 'string') return err(400, 'description is required')
   if (typeof amount !== 'number' || amount <= 0) return err(400, 'amount must be a positive number')
 
@@ -44,6 +45,16 @@ exports.handler = async (event) => {
   const invalidSplit = split.find((id) => !memberIds.has(id))
   if (invalidSplit) return err(400, `splitBetween includes a non-member: ${invalidSplit}`)
 
+  // Defaults every split member to 1 share (plain even split) unless the
+  // caller gives someone more — e.g. a +1 who doesn't have their own
+  // account counted as 2 shares under the member bringing them.
+  let normalizedShares
+  try {
+    normalizedShares = normalizeShares(shares, split)
+  } catch (e) {
+    return err(400, e.message)
+  }
+
   const expenseId = nanoid(10)
   const expense = {
     pk: `TRIP#${tripId}`,
@@ -54,6 +65,7 @@ exports.handler = async (event) => {
     amount,
     paidBy: payer,
     splitBetween: split,
+    shares: normalizedShares,
     addedBy: userId,
     createdAt: new Date().toISOString(),
   }

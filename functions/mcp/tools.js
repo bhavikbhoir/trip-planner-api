@@ -190,6 +190,27 @@ const TOOLS = [
       }),
   },
   {
+    name: 'convert_booking_to_expense',
+    description:
+      "Turn a booking's cost into a tracked shared expense (description/amount come from the booking itself). Defaults to splitting evenly across every current member unless splitBetween is given; defaults paidBy to the caller. A booking can only be converted once.",
+    inputSchema: {
+      type: 'object',
+      properties: {
+        tripId: { type: 'string' },
+        bookingId: { type: 'string' },
+        paidBy: { type: 'string', description: 'Member userId who paid; defaults to the caller' },
+        splitBetween: { type: 'array', items: { type: 'string' }, description: 'Member userIds; defaults to all members' },
+      },
+      required: ['tripId', 'bookingId'],
+    },
+    invoke: (args, authHeader) =>
+      callHandler(require('../bookings/convertToExpense'), {
+        pathParameters: { tripId: args.tripId, bookingId: args.bookingId },
+        body: { paidBy: args.paidBy, splitBetween: args.splitBetween },
+        headers: { Authorization: authHeader },
+      }),
+  },
+  {
     name: 'remove_booking',
     description: 'Delete a booking from a trip. Any member can delete.',
     inputSchema: {
@@ -459,7 +480,7 @@ const TOOLS = [
   },
   {
     name: 'get_me',
-    description: "The caller's account-level preferences: theme and email notification settings.",
+    description: "The caller's account-level preferences: theme, weather units, and email notification settings.",
     inputSchema: { type: 'object', properties: {}, required: [] },
     invoke: (args, authHeader) =>
       callHandler(require('../me/get'), { headers: { Authorization: authHeader } }),
@@ -475,6 +496,20 @@ const TOOLS = [
     invoke: (args, authHeader) =>
       callHandler(require('../me/updateTheme'), {
         body: { theme: args.theme },
+        headers: { Authorization: authHeader },
+      }),
+  },
+  {
+    name: 'update_my_weather_unit',
+    description: "Update the caller's preferred temperature units (imperial = °F, metric = °C) for weather shown across any trip.",
+    inputSchema: {
+      type: 'object',
+      properties: { weatherUnit: { type: 'string', enum: ['imperial', 'metric'] } },
+      required: ['weatherUnit'],
+    },
+    invoke: (args, authHeader) =>
+      callHandler(require('../me/updateWeatherUnit'), {
+        body: { weatherUnit: args.weatherUnit },
         headers: { Authorization: authHeader },
       }),
   },

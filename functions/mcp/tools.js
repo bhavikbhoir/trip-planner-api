@@ -459,7 +459,7 @@ const TOOLS = [
   },
   {
     name: 'get_me',
-    description: "The caller's account-level preferences: theme and email notification settings.",
+    description: "The caller's account-level preferences: theme, weather units, and email notification settings.",
     inputSchema: { type: 'object', properties: {}, required: [] },
     invoke: (args, authHeader) =>
       callHandler(require('../me/get'), { headers: { Authorization: authHeader } }),
@@ -475,6 +475,20 @@ const TOOLS = [
     invoke: (args, authHeader) =>
       callHandler(require('../me/updateTheme'), {
         body: { theme: args.theme },
+        headers: { Authorization: authHeader },
+      }),
+  },
+  {
+    name: 'update_my_weather_unit',
+    description: "Update the caller's preferred temperature units (imperial = °F, metric = °C) for weather shown across any trip.",
+    inputSchema: {
+      type: 'object',
+      properties: { weatherUnit: { type: 'string', enum: ['imperial', 'metric'] } },
+      required: ['weatherUnit'],
+    },
+    invoke: (args, authHeader) =>
+      callHandler(require('../me/updateWeatherUnit'), {
+        body: { weatherUnit: args.weatherUnit },
         headers: { Authorization: authHeader },
       }),
   },

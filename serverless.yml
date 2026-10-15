@@ -556,6 +556,15 @@ functions:
           authorizer:
             name: cognitoJwt
 
+  updateMyWeatherUnit:
+    handler: functions/me/updateWeatherUnit.handler
+    events:
+      - httpApi:
+          path: /me/weatherUnit
+          method: patch
+          authorizer:
+            name: cognitoJwt
+
   updateMyEmailPrefs:
     handler: functions/me/updateEmailPrefs.handler
     events:

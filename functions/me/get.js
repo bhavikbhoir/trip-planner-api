@@ -16,6 +16,10 @@ exports.handler = async (event) => {
   const profile = await db.get(`USER#${userId}`, 'PROFILE')
   return ok(200, {
     theme: profile?.theme || null,
+    // Unlike theme (where unset meaningfully means "follow system"), weather
+    // always needs some unit to render in — defaults to imperial so an
+    // existing account with no preference set sees no change in behavior.
+    weatherUnit: profile?.weatherUnit || 'imperial',
     // Both default false (opt-in, not opt-out) — see functions/me/updateEmailPrefs.js.
     emailPrefs: {
       tripReminders: profile?.emailPrefs?.tripReminders || false,

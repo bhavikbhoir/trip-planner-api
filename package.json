@@ -1,6 +1,6 @@
 {
   "name": "trip-planner-api",
-  "version": "1.3.0.0",
+  "version": "1.3.0.1",
   "private": true,
   "description": "Serverless backend for MANIFEST, a collaborative AI group trip planner",
   "engines": {

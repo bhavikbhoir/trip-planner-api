@@ -10,14 +10,22 @@ const MODEL_IDS = {
 // `input` object, not a string. This replaces "ask nicely for JSON and hope"
 // with a schema-conformant response, so callers no longer need to strip
 // markdown fences or recover from truncated/malformed JSON text.
-async function invokeClaude({ prompt, model = 'sonnet', maxTokens = 500, tools, toolChoice }) {
+async function invokeClaude({ prompt, model = 'sonnet', maxTokens = 500, tools, toolChoice, image }) {
   const { BedrockRuntimeClient, InvokeModelCommand } = await import('@aws-sdk/client-bedrock-runtime')
   const client = new BedrockRuntimeClient({ region: REGION })
+
+  // `image` goes first in content, same ordering Anthropic's docs recommend
+  // for image + text prompts (the model reads the image, then the ask).
+  const content = []
+  if (image) {
+    content.push({ type: 'image', source: { type: 'base64', media_type: image.mediaType, data: image.base64 } })
+  }
+  content.push({ type: 'text', text: prompt })
 
   const requestBody = {
     anthropic_version: 'bedrock-2023-05-31',
     max_tokens: maxTokens,
-    messages: [{ role: 'user', content: [{ type: 'text', text: prompt }] }],
+    messages: [{ role: 'user', content }],
   }
   if (tools) requestBody.tools = tools
   if (toolChoice) requestBody.tool_choice = toolChoice

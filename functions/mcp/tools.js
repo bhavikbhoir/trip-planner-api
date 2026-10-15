@@ -200,13 +200,18 @@ const TOOLS = [
         bookingId: { type: 'string' },
         paidBy: { type: 'string', description: 'Member userId who paid; defaults to the caller' },
         splitBetween: { type: 'array', items: { type: 'string' }, description: 'Member userIds; defaults to all members' },
+        shares: {
+          type: 'object',
+          additionalProperties: { type: 'integer', minimum: 1 },
+          description: 'Optional per-member share counts (userId -> whole number of shares), e.g. {"sam": 2} if Sam is bringing a +1. Members in splitBetween not listed here default to 1 share.',
+        },
       },
       required: ['tripId', 'bookingId'],
     },
     invoke: (args, authHeader) =>
       callHandler(require('../bookings/convertToExpense'), {
         pathParameters: { tripId: args.tripId, bookingId: args.bookingId },
-        body: { paidBy: args.paidBy, splitBetween: args.splitBetween },
+        body: { paidBy: args.paidBy, splitBetween: args.splitBetween, shares: args.shares },
         headers: { Authorization: authHeader },
       }),
   },
@@ -236,13 +241,24 @@ const TOOLS = [
         amount: { type: 'number', description: 'Positive number' },
         paidBy: { type: 'string', description: 'Member userId who paid; defaults to the caller' },
         splitBetween: { type: 'array', items: { type: 'string' }, description: 'Member userIds; defaults to all members' },
+        shares: {
+          type: 'object',
+          additionalProperties: { type: 'integer', minimum: 1 },
+          description: 'Optional per-member share counts (userId -> whole number of shares), e.g. {"sam": 2} if Sam is bringing a +1. Members in splitBetween not listed here default to 1 share.',
+        },
       },
       required: ['tripId', 'description', 'amount'],
     },
     invoke: (args, authHeader) =>
       callHandler(require('../expenses/create'), {
         pathParameters: { tripId: args.tripId },
-        body: { description: args.description, amount: args.amount, paidBy: args.paidBy, splitBetween: args.splitBetween },
+        body: {
+          description: args.description,
+          amount: args.amount,
+          paidBy: args.paidBy,
+          splitBetween: args.splitBetween,
+          shares: args.shares,
+        },
         headers: { Authorization: authHeader },
       }),
   },

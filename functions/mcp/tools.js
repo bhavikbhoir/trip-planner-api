@@ -58,7 +58,8 @@ const TOOLS = [
   },
   {
     name: 'get_weather',
-    description: "Current weather conditions at a trip's destination.",
+    description:
+      "Current weather conditions at a trip's destination, plus a per-day forecast (high/low/condition) for whichever of the trip's days fall within the ~5-day forecast window.",
     inputSchema: {
       type: 'object',
       properties: { tripId: { type: 'string' } },

@@ -58,7 +58,8 @@ const TOOLS = [
   },
   {
     name: 'get_weather',
-    description: "Current weather conditions at a trip's destination.",
+    description:
+      "Current weather conditions at a trip's destination, plus a per-day forecast (high/low/condition) for whichever of the trip's days fall within the ~5-day forecast window.",
     inputSchema: {
       type: 'object',
       properties: { tripId: { type: 'string' } },
@@ -130,6 +131,7 @@ const TOOLS = [
         confirmation: { type: 'string' },
         cost: { type: 'number' },
         referenceLink: { type: 'string', description: 'Must start with http:// or https://' },
+        breakfastIncluded: { type: 'boolean', description: 'Hotel bookings only' },
       },
       required: ['tripId', 'type', 'name', 'startDatetime', 'endDatetime'],
     },
@@ -145,6 +147,7 @@ const TOOLS = [
           confirmation: args.confirmation,
           cost: args.cost,
           referenceLink: args.referenceLink,
+          breakfastIncluded: args.breakfastIncluded,
         },
         headers: { Authorization: authHeader },
       }),
@@ -165,6 +168,7 @@ const TOOLS = [
         confirmation: { type: 'string' },
         cost: { type: 'number' },
         referenceLink: { type: 'string', description: 'Must start with http:// or https://' },
+        breakfastIncluded: { type: 'boolean', description: 'Hotel bookings only' },
       },
       required: ['tripId', 'bookingId', 'type', 'name', 'startDatetime', 'endDatetime'],
     },
@@ -180,6 +184,7 @@ const TOOLS = [
           confirmation: args.confirmation,
           cost: args.cost,
           referenceLink: args.referenceLink,
+          breakfastIncluded: args.breakfastIncluded,
         },
         headers: { Authorization: authHeader },
       }),

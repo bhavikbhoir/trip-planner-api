@@ -276,6 +276,16 @@ functions:
           authorizer:
             name: cognitoJwt
 
+  extractBooking:
+    handler: functions/bookings/extract.handler
+    timeout: 15
+    events:
+      - httpApi:
+          path: /trips/{tripId}/bookings/extract
+          method: post
+          authorizer:
+            name: cognitoJwt
+
   createExpense:
     handler: functions/expenses/create.handler
     events:

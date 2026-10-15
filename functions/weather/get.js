@@ -1,7 +1,7 @@
 const { extractUserId } = require('../../shared/auth')
 const { ok, err } = require('../../shared/response')
 const { getTripAggregate } = require('../../shared/tripAggregate')
-const { getWeather } = require('../../shared/weather')
+const { getWeather, getForecast } = require('../../shared/weather')
 
 exports.handler = async (event) => {
   let userId
@@ -20,8 +20,8 @@ exports.handler = async (event) => {
   const isMember = members.some((m) => m.userId === userId)
   if (!isMember) return err(403, 'Not a member of this trip')
 
-  const weather = await getWeather(trip.destination)
+  const [weather, forecast] = await Promise.all([getWeather(trip.destination), getForecast(trip.destination)])
   if (!weather) return err(502, 'Weather data unavailable right now')
 
-  return ok(200, { weather })
+  return ok(200, { weather, forecast })
 }

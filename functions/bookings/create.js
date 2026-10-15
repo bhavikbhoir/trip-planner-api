@@ -26,7 +26,8 @@ exports.handler = async (event) => {
     return err(400, 'Invalid JSON body')
   }
 
-  const { type, name, location, startDatetime, endDatetime, confirmation, cost, referenceLink } = body
+  const { type, name, location, startDatetime, endDatetime, confirmation, cost, referenceLink, breakfastIncluded } =
+    body
   if (!VALID_TYPES.includes(type)) {
     return err(400, `type must be one of ${VALID_TYPES.join(', ')}`)
   }
@@ -55,6 +56,7 @@ exports.handler = async (event) => {
     // else — e.g. a javascript: URL — must be rejected here, not just cosmetically
     // on the client).
     referenceLink: referenceLink || null,
+    breakfastIncluded: type === 'hotel' ? !!breakfastIncluded : null,
     addedBy: userId,
     createdAt: new Date().toISOString(),
   }

@@ -127,6 +127,8 @@ function buildPrompt({ trip, members, logistics, bookings, weather, suggestions,
         p.groupDynamics?.length ? `  group dynamics: ${p.groupDynamics.join(', ')}` : null,
         p.dislikes ? `  dislikes/avoid: ${p.dislikes}` : null,
         p.mustDo ? `  must-do: ${p.mustDo}` : null,
+        p.preferredHotels ? `  preferred hotels/chains: ${p.preferredHotels}` : null,
+        p.eatingPlaces ? `  favorite food/eating spots: ${p.eatingPlaces}` : null,
         companions ? `  bringing: ${companions} — factor their ages into pacing and activity difficulty` : null,
       ]
         .filter(Boolean)

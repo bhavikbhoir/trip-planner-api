@@ -190,6 +190,27 @@ const TOOLS = [
       }),
   },
   {
+    name: 'convert_booking_to_expense',
+    description:
+      "Turn a booking's cost into a tracked shared expense (description/amount come from the booking itself). Defaults to splitting evenly across every current member unless splitBetween is given; defaults paidBy to the caller. A booking can only be converted once.",
+    inputSchema: {
+      type: 'object',
+      properties: {
+        tripId: { type: 'string' },
+        bookingId: { type: 'string' },
+        paidBy: { type: 'string', description: 'Member userId who paid; defaults to the caller' },
+        splitBetween: { type: 'array', items: { type: 'string' }, description: 'Member userIds; defaults to all members' },
+      },
+      required: ['tripId', 'bookingId'],
+    },
+    invoke: (args, authHeader) =>
+      callHandler(require('../bookings/convertToExpense'), {
+        pathParameters: { tripId: args.tripId, bookingId: args.bookingId },
+        body: { paidBy: args.paidBy, splitBetween: args.splitBetween },
+        headers: { Authorization: authHeader },
+      }),
+  },
+  {
     name: 'remove_booking',
     description: 'Delete a booking from a trip. Any member can delete.',
     inputSchema: {

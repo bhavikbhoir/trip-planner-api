@@ -286,6 +286,15 @@ functions:
           authorizer:
             name: cognitoJwt
 
+  convertBookingToExpense:
+    handler: functions/bookings/convertToExpense.handler
+    events:
+      - httpApi:
+          path: /trips/{tripId}/bookings/{bookingId}/convert-to-expense
+          method: post
+          authorizer:
+            name: cognitoJwt
+
   createExpense:
     handler: functions/expenses/create.handler
     events:

@@ -20,6 +20,21 @@ exports.handler = async (event) => {
   const expense = await db.get(`TRIP#${tripId}`, `EXPENSE#${expenseId}`)
   if (!expense) return err(404, 'Expense not found')
 
+  // If this expense came from converting a booking (see
+  // bookings/convertToExpense.js), clear that booking's marker in the same
+  // transaction — otherwise the booking stays stuck believing it's already
+  // converted, with no way to add it to expenses again.
+  if (expense.sourceBookingId) {
+    const booking = await db.get(`TRIP#${tripId}`, `BOOKING#${expense.sourceBookingId}`)
+    if (booking && booking.convertedExpenseId === expenseId) {
+      await db.transactWrite([
+        { Delete: { TableName: db.TABLE_NAME, Key: { pk: `TRIP#${tripId}`, sk: `EXPENSE#${expenseId}` } } },
+        { Put: { TableName: db.TABLE_NAME, Item: { ...booking, convertedExpenseId: null } } },
+      ])
+      return ok(200, { deleted: true, expenseId })
+    }
+  }
+
   await db.del(`TRIP#${tripId}`, `EXPENSE#${expenseId}`)
 
   return ok(200, { deleted: true, expenseId })

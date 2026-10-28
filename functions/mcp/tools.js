@@ -263,6 +263,39 @@ const TOOLS = [
       }),
   },
   {
+    name: 'update_expense',
+    description: 'Replace an existing expense (full replace, not partial — send every field). Any member can edit.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        tripId: { type: 'string' },
+        expenseId: { type: 'string' },
+        description: { type: 'string' },
+        amount: { type: 'number', description: 'Positive number' },
+        paidBy: { type: 'string', description: 'Member userId who paid' },
+        splitBetween: { type: 'array', items: { type: 'string' }, description: 'Member userIds' },
+        shares: {
+          type: 'object',
+          additionalProperties: { type: 'integer', minimum: 1 },
+          description: 'Optional per-member share counts (userId -> whole number of shares). Members in splitBetween not listed here default to 1 share.',
+        },
+      },
+      required: ['tripId', 'expenseId', 'description', 'amount'],
+    },
+    invoke: (args, authHeader) =>
+      callHandler(require('../expenses/update'), {
+        pathParameters: { tripId: args.tripId, expenseId: args.expenseId },
+        body: {
+          description: args.description,
+          amount: args.amount,
+          paidBy: args.paidBy,
+          splitBetween: args.splitBetween,
+          shares: args.shares,
+        },
+        headers: { Authorization: authHeader },
+      }),
+  },
+  {
     name: 'remove_expense',
     description: 'Delete a logged expense from a trip.',
     inputSchema: {

@@ -304,6 +304,15 @@ functions:
           authorizer:
             name: cognitoJwt
 
+  updateExpense:
+    handler: functions/expenses/update.handler
+    events:
+      - httpApi:
+          path: /trips/{tripId}/expenses/{expenseId}
+          method: put
+          authorizer:
+            name: cognitoJwt
+
   removeExpense:
     handler: functions/expenses/remove.handler
     events:

@@ -13,7 +13,7 @@ exports.handler = async (event) => {
   const tripId = event.pathParameters?.tripId
   if (!tripId) return err(400, 'tripId is required')
 
-  const { trip, members, logistics, bookings, plans, suggestions, approvals, eventCompletions, eventSkips, eventSwaps, picks, expenses, tips, feedback } =
+  const { trip, members, logistics, bookings, plans, suggestions, approvals, eventCompletions, eventSkips, eventSwaps, picks, expenses, settlements, tips, feedback } =
     await getTripAggregate(tripId)
   if (!trip) return err(404, 'Trip not found')
 
@@ -33,6 +33,7 @@ exports.handler = async (event) => {
     eventSwaps,
     picks,
     expenses,
+    settlements,
     tips,
     feedback,
   })

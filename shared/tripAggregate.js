@@ -20,6 +20,7 @@ async function getTripAggregate(tripId) {
   const eventSwaps = items.filter((i) => i.sk.startsWith('SWAPPED#'))
   const picks = items.filter((i) => i.sk.startsWith('PICK#'))
   const expenses = items.filter((i) => i.sk.startsWith('EXPENSE#'))
+  const settlements = items.filter((i) => i.sk.startsWith('SETTLEMENT#'))
   const tips = items.filter((i) => i.sk.startsWith('TIP#'))
   const feedback = items.filter((i) => i.sk.startsWith('FEEDBACK#'))
 
@@ -36,6 +37,7 @@ async function getTripAggregate(tripId) {
     eventSwaps,
     picks,
     expenses,
+    settlements,
     tips,
     feedback,
   }

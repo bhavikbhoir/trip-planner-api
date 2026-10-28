@@ -322,6 +322,24 @@ functions:
           authorizer:
             name: cognitoJwt
 
+  createSettlement:
+    handler: functions/settlements/create.handler
+    events:
+      - httpApi:
+          path: /trips/{tripId}/settlements
+          method: post
+          authorizer:
+            name: cognitoJwt
+
+  removeSettlement:
+    handler: functions/settlements/remove.handler
+    events:
+      - httpApi:
+          path: /trips/{tripId}/settlements/{settlementId}
+          method: delete
+          authorizer:
+            name: cognitoJwt
+
   generateAdvisorTips:
     handler: functions/advisor/generate.handler
     timeout: 15

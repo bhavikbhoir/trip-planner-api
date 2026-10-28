@@ -310,6 +310,42 @@ const TOOLS = [
       }),
   },
   {
+    name: 'record_settlement',
+    description:
+      'Mark a settle-up debt as paid outside the app (cash or an online transfer). Does not change the underlying expense splits — nets against them when balances are computed, same as a real payment would.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        tripId: { type: 'string' },
+        fromUserId: { type: 'string', description: 'Member userId who paid (the debtor)' },
+        toUserId: { type: 'string', description: 'Member userId who received payment (the creditor)' },
+        amount: { type: 'number', description: 'Positive number' },
+        method: { type: 'string', enum: ['cash', 'online'] },
+      },
+      required: ['tripId', 'fromUserId', 'toUserId', 'amount', 'method'],
+    },
+    invoke: (args, authHeader) =>
+      callHandler(require('../settlements/create'), {
+        pathParameters: { tripId: args.tripId },
+        body: { fromUserId: args.fromUserId, toUserId: args.toUserId, amount: args.amount, method: args.method },
+        headers: { Authorization: authHeader },
+      }),
+  },
+  {
+    name: 'remove_settlement',
+    description: 'Undo a recorded settlement — the debt it paid off reappears in the settle-up list.',
+    inputSchema: {
+      type: 'object',
+      properties: { tripId: { type: 'string' }, settlementId: { type: 'string' } },
+      required: ['tripId', 'settlementId'],
+    },
+    invoke: (args, authHeader) =>
+      callHandler(require('../settlements/remove'), {
+        pathParameters: { tripId: args.tripId, settlementId: args.settlementId },
+        headers: { Authorization: authHeader },
+      }),
+  },
+  {
     name: 'add_suggestion',
     description: 'Suggest a change to the itinerary. Notifies other trip members.',
     inputSchema: {

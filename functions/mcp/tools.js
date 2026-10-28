@@ -263,6 +263,39 @@ const TOOLS = [
       }),
   },
   {
+    name: 'update_expense',
+    description: 'Replace an existing expense (full replace, not partial — send every field). Any member can edit.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        tripId: { type: 'string' },
+        expenseId: { type: 'string' },
+        description: { type: 'string' },
+        amount: { type: 'number', description: 'Positive number' },
+        paidBy: { type: 'string', description: 'Member userId who paid' },
+        splitBetween: { type: 'array', items: { type: 'string' }, description: 'Member userIds' },
+        shares: {
+          type: 'object',
+          additionalProperties: { type: 'integer', minimum: 1 },
+          description: 'Optional per-member share counts (userId -> whole number of shares). Members in splitBetween not listed here default to 1 share.',
+        },
+      },
+      required: ['tripId', 'expenseId', 'description', 'amount'],
+    },
+    invoke: (args, authHeader) =>
+      callHandler(require('../expenses/update'), {
+        pathParameters: { tripId: args.tripId, expenseId: args.expenseId },
+        body: {
+          description: args.description,
+          amount: args.amount,
+          paidBy: args.paidBy,
+          splitBetween: args.splitBetween,
+          shares: args.shares,
+        },
+        headers: { Authorization: authHeader },
+      }),
+  },
+  {
     name: 'remove_expense',
     description: 'Delete a logged expense from a trip.',
     inputSchema: {
@@ -273,6 +306,42 @@ const TOOLS = [
     invoke: (args, authHeader) =>
       callHandler(require('../expenses/remove'), {
         pathParameters: { tripId: args.tripId, expenseId: args.expenseId },
+        headers: { Authorization: authHeader },
+      }),
+  },
+  {
+    name: 'record_settlement',
+    description:
+      'Mark a settle-up debt as paid outside the app (cash or an online transfer). Does not change the underlying expense splits — nets against them when balances are computed, same as a real payment would.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        tripId: { type: 'string' },
+        fromUserId: { type: 'string', description: 'Member userId who paid (the debtor)' },
+        toUserId: { type: 'string', description: 'Member userId who received payment (the creditor)' },
+        amount: { type: 'number', description: 'Positive number' },
+        method: { type: 'string', enum: ['cash', 'online'] },
+      },
+      required: ['tripId', 'fromUserId', 'toUserId', 'amount', 'method'],
+    },
+    invoke: (args, authHeader) =>
+      callHandler(require('../settlements/create'), {
+        pathParameters: { tripId: args.tripId },
+        body: { fromUserId: args.fromUserId, toUserId: args.toUserId, amount: args.amount, method: args.method },
+        headers: { Authorization: authHeader },
+      }),
+  },
+  {
+    name: 'remove_settlement',
+    description: 'Undo a recorded settlement — the debt it paid off reappears in the settle-up list.',
+    inputSchema: {
+      type: 'object',
+      properties: { tripId: { type: 'string' }, settlementId: { type: 'string' } },
+      required: ['tripId', 'settlementId'],
+    },
+    invoke: (args, authHeader) =>
+      callHandler(require('../settlements/remove'), {
+        pathParameters: { tripId: args.tripId, settlementId: args.settlementId },
         headers: { Authorization: authHeader },
       }),
   },

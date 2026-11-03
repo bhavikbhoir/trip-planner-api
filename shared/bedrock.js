@@ -10,22 +10,38 @@ const MODEL_IDS = {
 // `input` object, not a string. This replaces "ask nicely for JSON and hope"
 // with a schema-conformant response, so callers no longer need to strip
 // markdown fences or recover from truncated/malformed JSON text.
-async function invokeClaude({ prompt, model = 'sonnet', maxTokens = 500, tools, toolChoice, image }) {
+//
+// `messages` is for multi-turn callers (Compass) that already have a full
+// conversation to replay — it's used as-is instead of building a single
+// user turn from `prompt`. `system` is a separate top-level field in the
+// Messages API, not part of `messages`; pass `cacheSystemPrompt: true` to
+// mark it as an Anthropic prompt-cache block, which is worth doing for any
+// system prompt sent unchanged on every turn of a conversation (only the
+// first turn pays full price for it after that).
+async function invokeClaude({ prompt, messages, system, cacheSystemPrompt, model = 'sonnet', maxTokens = 500, tools, toolChoice, image }) {
   const { BedrockRuntimeClient, InvokeModelCommand } = await import('@aws-sdk/client-bedrock-runtime')
   const client = new BedrockRuntimeClient({ region: REGION })
 
-  // `image` goes first in content, same ordering Anthropic's docs recommend
-  // for image + text prompts (the model reads the image, then the ask).
-  const content = []
-  if (image) {
-    content.push({ type: 'image', source: { type: 'base64', media_type: image.mediaType, data: image.base64 } })
+  let finalMessages = messages
+  if (!finalMessages) {
+    // `image` goes first in content, same ordering Anthropic's docs
+    // recommend for image + text prompts (the model reads the image, then
+    // the ask).
+    const content = []
+    if (image) {
+      content.push({ type: 'image', source: { type: 'base64', media_type: image.mediaType, data: image.base64 } })
+    }
+    content.push({ type: 'text', text: prompt })
+    finalMessages = [{ role: 'user', content }]
   }
-  content.push({ type: 'text', text: prompt })
 
   const requestBody = {
     anthropic_version: 'bedrock-2023-05-31',
     max_tokens: maxTokens,
-    messages: [{ role: 'user', content }],
+    messages: finalMessages,
+  }
+  if (system) {
+    requestBody.system = cacheSystemPrompt ? [{ type: 'text', text: system, cache_control: { type: 'ephemeral' } }] : system
   }
   if (tools) requestBody.tools = tools
   if (toolChoice) requestBody.tool_choice = toolChoice

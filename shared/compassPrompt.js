@@ -14,4 +14,24 @@ You have no live data on prices, flight times, or availability. Never state a sp
 
 Stay on trip planning. If asked about anything else, say so briefly and steer back.`
 
-module.exports = { COMPASS_SYSTEM_PROMPT }
+// Appends known facts from the account-level travel profile (see
+// functions/me/updateTravelProfile.js) so Compass doesn't re-ask things
+// the person already told the app — home base, who they usually travel
+// with, what they're into. Still just instruction, not a guarantee: told
+// to treat it as a starting assumption, not a locked-in fact, since this
+// particular trip might not match their usual pattern.
+function buildCompassSystemPrompt(travelProfile) {
+  const facts = []
+  if (travelProfile?.homeBase) facts.push(`Usually travels from: ${travelProfile.homeBase}`)
+  if (travelProfile?.travelStyle) facts.push(`Usually travels: ${travelProfile.travelStyle}`)
+  if (travelProfile?.interests?.length) facts.push(`Usually into: ${travelProfile.interests.join(', ')}`)
+
+  if (!facts.length) return COMPASS_SYSTEM_PROMPT
+
+  return `${COMPASS_SYSTEM_PROMPT}
+
+What you already know about this traveler — a starting assumption, not a locked-in fact, so don't re-ask it outright but do check in if this trip sounds different:
+${facts.map((f) => `- ${f}`).join('\n')}`
+}
+
+module.exports = { COMPASS_SYSTEM_PROMPT, buildCompassSystemPrompt }

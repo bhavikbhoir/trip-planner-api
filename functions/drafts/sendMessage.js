@@ -3,7 +3,7 @@ const { extractUserId } = require('../../shared/auth')
 const { ok, err } = require('../../shared/response')
 const { invokeClaude } = require('../../shared/bedrock')
 const { logUsageEvent } = require('../../shared/usageLog')
-const { COMPASS_SYSTEM_PROMPT } = require('../../shared/compassPrompt')
+const { buildCompassSystemPrompt } = require('../../shared/compassPrompt')
 
 // A cap on user turns, not total messages — keeps a single draft from
 // running up an unbounded Bedrock bill, and doubles as a loop guardrail.
@@ -49,11 +49,22 @@ exports.handler = async (event) => {
     { role: 'user', content },
   ]
 
+  // Best-effort — if this lookup fails for some reason, Compass just
+  // doesn't personalize the prompt this turn rather than failing the
+  // whole request over a non-essential read.
+  let travelProfile = null
+  try {
+    const profile = await db.get(`USER#${userId}`, 'PROFILE')
+    travelProfile = profile?.travelProfile || null
+  } catch {
+    travelProfile = null
+  }
+
   let reply
   try {
     reply = await invokeClaude({
       messages: candidateMessages,
-      system: COMPASS_SYSTEM_PROMPT,
+      system: buildCompassSystemPrompt(travelProfile),
       cacheSystemPrompt: true,
       model: 'haiku',
       maxTokens: 300,

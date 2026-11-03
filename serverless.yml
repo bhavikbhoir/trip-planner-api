@@ -340,6 +340,43 @@ functions:
           authorizer:
             name: cognitoJwt
 
+  createDraft:
+    handler: functions/drafts/create.handler
+    events:
+      - httpApi:
+          path: /drafts
+          method: post
+          authorizer:
+            name: cognitoJwt
+
+  listDrafts:
+    handler: functions/drafts/list.handler
+    events:
+      - httpApi:
+          path: /drafts
+          method: get
+          authorizer:
+            name: cognitoJwt
+
+  getDraft:
+    handler: functions/drafts/get.handler
+    events:
+      - httpApi:
+          path: /drafts/{draftId}
+          method: get
+          authorizer:
+            name: cognitoJwt
+
+  sendDraftMessage:
+    handler: functions/drafts/sendMessage.handler
+    timeout: 15
+    events:
+      - httpApi:
+          path: /drafts/{draftId}/messages
+          method: post
+          authorizer:
+            name: cognitoJwt
+
   generateAdvisorTips:
     handler: functions/advisor/generate.handler
     timeout: 15

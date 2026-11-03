@@ -17,6 +17,8 @@ exports.handler = async (event) => {
 
   // The list view only needs enough to label each draft, not the full
   // conversation — leave that for GET /drafts/:id when one is opened.
+  // `firstMessage` is what the conversation is actually about (what the
+  // list shows as its title); `lastMessage` is where it left off.
   const drafts = items
     .slice()
     .sort((a, b) => new Date(b.updatedAt) - new Date(a.updatedAt))
@@ -24,6 +26,7 @@ exports.handler = async (event) => {
       draftId,
       status,
       messageCount: messages.length,
+      firstMessage: messages.find((m) => m.role === 'user')?.content || null,
       lastMessage: messages[messages.length - 1]?.content || null,
       createdAt,
       updatedAt,

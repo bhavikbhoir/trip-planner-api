@@ -638,6 +638,15 @@ functions:
           authorizer:
             name: cognitoJwt
 
+  updateMyTravelProfile:
+    handler: functions/me/updateTravelProfile.handler
+    events:
+      - httpApi:
+          path: /me/travelProfile
+          method: patch
+          authorizer:
+            name: cognitoJwt
+
   updateMyEmailPrefs:
     handler: functions/me/updateEmailPrefs.handler
     events:

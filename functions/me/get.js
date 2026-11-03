@@ -25,5 +25,12 @@ exports.handler = async (event) => {
       tripReminders: profile?.emailPrefs?.tripReminders || false,
       activityNotifications: profile?.emailPrefs?.activityNotifications || false,
     },
+    // See functions/me/updateTravelProfile.js — all three independently
+    // optional, null/empty until someone actually sets them.
+    travelProfile: {
+      homeBase: profile?.travelProfile?.homeBase || null,
+      travelStyle: profile?.travelProfile?.travelStyle || null,
+      interests: profile?.travelProfile?.interests || [],
+    },
   })
 }

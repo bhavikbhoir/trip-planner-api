@@ -20,18 +20,28 @@ Stay on trip planning. If asked about anything else, say so briefly and steer ba
 // with, what they're into. Still just instruction, not a guarantee: told
 // to treat it as a starting assumption, not a locked-in fact, since this
 // particular trip might not match their usual pattern.
-function buildCompassSystemPrompt(travelProfile) {
+//
+// `carriedSummary` is the other kind of carried-over context — not a
+// standing account preference but a short recap of one specific earlier
+// conversation (see shared/compassHandoff.js), set on a draft only when
+// it was started as a continuation of another one.
+function buildCompassSystemPrompt(travelProfile, carriedSummary) {
   const facts = []
   if (travelProfile?.homeBase) facts.push(`Usually travels from: ${travelProfile.homeBase}`)
   if (travelProfile?.travelStyle) facts.push(`Usually travels: ${travelProfile.travelStyle}`)
   if (travelProfile?.interests?.length) facts.push(`Usually into: ${travelProfile.interests.join(', ')}`)
 
-  if (!facts.length) return COMPASS_SYSTEM_PROMPT
+  let prompt = COMPASS_SYSTEM_PROMPT
 
-  return `${COMPASS_SYSTEM_PROMPT}
+  if (facts.length) {
+    prompt += `\n\nWhat you already know about this traveler — a starting assumption, not a locked-in fact, so don't re-ask it outright but do check in if this trip sounds different:\n${facts.map((f) => `- ${f}`).join('\n')}`
+  }
 
-What you already know about this traveler — a starting assumption, not a locked-in fact, so don't re-ask it outright but do check in if this trip sounds different:
-${facts.map((f) => `- ${f}`).join('\n')}`
+  if (carriedSummary) {
+    prompt += `\n\nThis picks up from an earlier conversation. Treat the following as background you already have, not something to re-confirm line by line:\n${carriedSummary}`
+  }
+
+  return prompt
 }
 
 module.exports = { COMPASS_SYSTEM_PROMPT, buildCompassSystemPrompt }

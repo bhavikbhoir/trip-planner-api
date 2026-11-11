@@ -67,7 +67,7 @@ exports.handler = async (event) => {
       system: buildCompassSystemPrompt(travelProfile, draft.carriedSummary),
       cacheSystemPrompt: true,
       model: 'haiku',
-      maxTokens: 300,
+      maxTokens: 500,
     })
   } catch (e) {
     return err(502, e.message || "Compass couldn't reply just now — try again.")

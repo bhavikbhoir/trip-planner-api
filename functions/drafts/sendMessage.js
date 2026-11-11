@@ -64,7 +64,7 @@ exports.handler = async (event) => {
   try {
     reply = await invokeClaude({
       messages: candidateMessages,
-      system: buildCompassSystemPrompt(travelProfile),
+      system: buildCompassSystemPrompt(travelProfile, draft.carriedSummary),
       cacheSystemPrompt: true,
       model: 'haiku',
       maxTokens: 500,
